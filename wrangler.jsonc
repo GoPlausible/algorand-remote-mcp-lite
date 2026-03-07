@@ -10,6 +10,13 @@
   "preview_urls": false,
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "npm run build:ui"
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS"
+  },
   "route": {
     "pattern": "algorandmcplite.goplausible.xyz/*",
     "zone_id": "592cbc5d1b3eec4db482306cbc966e1d"

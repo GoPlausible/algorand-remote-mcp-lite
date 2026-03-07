@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../../types';
+import type { AssetsBinding } from '../../ui/widgetManager';
 import { registerAlgodApiTools } from './algod';
 import { registerIndexerApiTools } from './indexer';
 import { registerNfdApiTools } from './nfd';
@@ -15,15 +16,15 @@ import { registerHaystackRouterTools } from './hayrouter';
 /**
  * Register API tools to the MCP server
  */
-export function registerApiTools(server: McpServer,env: Env, props: Props): void {
+export function registerApiTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
   // Register algod API tools
   registerAlgodApiTools(server, env);
 
   // Register indexer API tools
   registerIndexerApiTools(server, env);
 
-  // Register NFD API tools
-  registerNfdApiTools(server, env);
+  // Register NFD API tools (with widget UI)
+  registerNfdApiTools(server, env, assets);
 
   // Register Haystack Router tools
   registerHaystackRouterTools(server, env, props);

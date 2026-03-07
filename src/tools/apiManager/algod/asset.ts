@@ -369,7 +369,7 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
     'pera_verified_asset_query',
     'Get detailed information about an Algorand asset from Pera Wallet',
     {
-      assetId: z.number().int().min(0).max(9223372036854776000)
+      assetId: z.number().int().min(0)
         .describe('Asset ID to get detailed information')
     },
     async ({ assetId }) => {

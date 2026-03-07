@@ -407,6 +407,10 @@ export interface State {
  */
 export interface Env {
 
+  /**
+   * Static assets binding for MCP Apps UI widgets
+   */
+  ASSETS?: { fetch: (request: Request | string) => Promise<Response> };
 
   /**
    * Hashicorp Vault Worker binding for secure secret storage

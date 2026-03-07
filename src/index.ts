@@ -168,8 +168,8 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 * Register API integration tools
 	 */
 	private registerApiTools() {
-		// Register external API integration tools
-		registerApiTools(this.server, this.env, this.props);
+		// Register external API integration tools (pass ASSETS for widget UI)
+		registerApiTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	// /**
@@ -184,8 +184,8 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 * Register Wallet tools for wallet information access
 	 */
 	private async registerWalletTools() {
-		// Register wallet management tools
-		await registerWalletTools(this.server, this.env, this.props);
+		// Register wallet management tools (pass ASSETS for widget UI)
+		await registerWalletTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 	/**
 	 * Register AP2 tools 

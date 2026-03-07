@@ -10,29 +10,33 @@
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"type-check": "tsc --noEmit",
-		"build": "wrangler deploy --dry-run --outdir=dist",
+		"build:ui": "INPUT=widgets/wallet-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/nfd-card.html vite build --config vite.widgets.config.ts",
+		"build": "npm run build:ui && wrangler deploy --dry-run --outdir=dist",
 		"test": "vitest run",
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@modelcontextprotocol/sdk": "^1.12.1",
 		"@cf-wasm/photon": "^0.1.31",
 		"@juit/qrcode": "^1.0.59",
+		"@modelcontextprotocol/ext-apps": "^1.2.0",
+		"@modelcontextprotocol/sdk": "^1.12.1",
+		"@tinymanorg/tinyman-js-sdk": "^5.1.2",
+		"@txnlab/haystack-router": "^2.0.5",
 		"agents": "^0.0.95",
+		"algo-msgpack-with-bigint": "^2.1.1",
+		"algosdk": "^3.5.2",
+		"hi-base32": "^0.5.1",
 		"hono": "^4.8.0",
 		"just-pick": "^4.2.0",
-		"zod": "^3.25.61",
-		"algosdk": "^3.5.2",
 		"qrcode": "^1.5.4",
-		"algo-msgpack-with-bigint": "^2.1.1",
-		"hi-base32": "^0.5.1",
-		"@tinymanorg/tinyman-js-sdk": "^5.1.2",
-		"@txnlab/haystack-router":"^2.0.5"
+		"zod": "^3.25.61"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@types/node": "^20.17.24",
 		"typescript": "^5.8.3",
+		"vite": "^7.3.1",
+		"vite-plugin-singlefile": "^2.3.0",
 		"vitest": "^4.0.18",
 		"wrangler": "^4.25.0"
 	}
