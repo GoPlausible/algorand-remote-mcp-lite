@@ -33,22 +33,23 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
       inputSchema: {
         name: z.string().describe('NFD domain name, e.g. "example.algo"'),
         view: z.enum(['brief', 'full']).optional().default('full').describe('View type - brief or full'),
-        includeSales: z.boolean().optional().default(false).describe('Include sales data')
+        includeSales: z.boolean().optional().default(false).describe('Include sales data'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
       },
       _meta: {
         ui: { resourceUri: nfdCardResourceUri },
         'ui/resourceUri': nfdCardResourceUri,
       },
     },
-    async ({ name, view, includeSales }) => {
+    async ({ name, view, includeSales, pageToken }) => {
       try {
         const apiBase = env.NFD_API_URL || 'https://api.nf.domains';
 
         let url = `${apiBase}/nfd/${encodeURIComponent(name.toLowerCase())}`;
         const params = new URLSearchParams();
 
-        if (view === 'brief') {
-          params.append('view', 'brief');
+        if (view) {
+          params.append('view', view);
         }
 
         if (includeSales) {
@@ -106,13 +107,30 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
           ? `https://ipfs.io/ipfs/${rawAvatar.slice(7)}`
           : rawAvatar;
 
+        // Paginate assets for structuredContent (10 per page)
+        const assetsPerPage = 10;
+        const assetPageNum = pageToken ? (() => {
+          try { return Number.parseInt(atob(pageToken).replace('page_', '')) || 1; } catch { return 1; }
+        })() : 1;
+        const assetStartIdx = (assetPageNum - 1) * assetsPerPage;
+        const assetEndIdx = assetStartIdx + assetsPerPage;
+        const paginatedAssets = accountAssets.slice(assetStartIdx, assetEndIdx);
+        const totalAssetPages = Math.ceil(accountAssets.length / assetsPerPage);
+
         const nfdAccount = {
           nfdName: nfdData.name || name,
           avatar: avatarUrl,
           address: depositAddress || '',
           amount: accountAmount,
-          assets: accountAssets,
+          assets: paginatedAssets,
+          totalAssets: accountAssets.length,
           showAssets: view === 'full',
+          assetPagination: accountAssets.length > assetsPerPage ? {
+            currentPage: assetPageNum,
+            totalPages: totalAssetPages,
+            hasNextPage: assetEndIdx < accountAssets.length,
+            hasPrevPage: assetPageNum > 1,
+          } : undefined,
           category: nfdData.category || null,
           state: nfdData.state || null,
           owner: nfdData.owner || null,
@@ -124,7 +142,7 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         };
 
         const combinedData = { ...nfdData, account: { address: depositAddress, amount: accountAmount, assets: accountAssets } };
-        const textResponse = ResponseProcessor.processResponse(combinedData);
+        const textResponse = ResponseProcessor.processResponse(combinedData, pageToken);
 
         return {
           ...textResponse,

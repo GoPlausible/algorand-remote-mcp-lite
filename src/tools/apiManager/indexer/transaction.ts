@@ -30,9 +30,10 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
     'indexer_lookup_transaction_by_id',
     'Get transaction details from indexer',
     { 
-      txid: z.string().describe('Transaction ID')
+      txid: z.string().describe('Transaction ID'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ txid }) => {
+    async ({ txid, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -53,7 +54,7 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
         // Lookup transaction by ID
         const response = await indexerClient.lookupTransactionByID(String(txid)).do();
         
-        return ResponseProcessor.processResponse(response);
+        return ResponseProcessor.processResponse(response, pageToken);
       } catch (error: any) {
         return {
           content: [{
@@ -82,10 +83,11 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
       round: z.number().int().optional().describe('Return transactions for a specific round'),
       minRound: z.number().int().optional().describe('Return transactions after this round'),
       maxRound: z.number().int().optional().describe('Return transactions before this round'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
     async ({ address, limit, txType, sigType, assetId, beforeTime, afterTime,
-             currencyGreaterThan, currencyLessThan, round, minRound, maxRound, nextToken }) => {
+             currencyGreaterThan, currencyLessThan, round, minRound, maxRound, nextToken, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -146,7 +148,7 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
         // Execute lookup
         const response = await search.do();
         
-        return ResponseProcessor.processResponse(response);
+        return ResponseProcessor.processResponse(response, pageToken);
       } catch (error: any) {
         return {
           content: [{

@@ -222,12 +222,15 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     'wallet_get_info',
     {
       description: 'Get the account information for the configured wallet. Always use algorand_mcp_skill tool at the start of each session to obtain required skill on how to operate and interact with this MCP service!',
+      inputSchema: {
+        pageToken: z.string().optional().describe('Pagination token for paginated results'),
+      },
       _meta: {
         ui: { resourceUri: walletCardResourceUri },
         'ui/resourceUri': walletCardResourceUri,
       },
     },
-    async () => {
+    async ({ pageToken }) => {
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{
@@ -283,7 +286,7 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         };
 
         // Return both text fallback and structured content for UI
-        const textResponse = ResponseProcessor.processResponse(walletData);
+        const textResponse = ResponseProcessor.processResponse(walletData, pageToken);
         return {
           ...textResponse,
           structuredContent: walletData,
@@ -303,8 +306,10 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   server.tool(
     'wallet_get_assets',
     'Get the assets for the configured wallet',
-    {},
-    async () => {
+    {
+      pageToken: z.string().optional().describe('Pagination token for paginated results'),
+    },
+    async ({ pageToken }) => {
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{
@@ -340,8 +345,7 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           assets: accountInfo.assets || [],
           user: props.email,
           provider: props.provider,
-
-        });
+        }, pageToken);
       } catch (error: any) {
         return {
           content: [{

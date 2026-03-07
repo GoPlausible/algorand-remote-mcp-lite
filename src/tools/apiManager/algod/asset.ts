@@ -412,9 +412,10 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
     'pera_verified_assets_search',
     'Search PeraWallet verified Algorand asset(s) by asset name, unit name, or creator address',
     {
-      query: z.string().min(1).describe('Asset name, unit name, or creator address to search for')
+      query: z.string().min(1).describe('Asset name, unit name, or creator address to search for'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ query }) => {
+    async ({ query, pageToken }) => {
       try {
         let assets: any[] = [];
 
@@ -443,7 +444,7 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
           };
         }
 
-        return ResponseProcessor.processResponse(filteredAssets);
+        return ResponseProcessor.processResponse(filteredAssets, pageToken);
       } catch (error: any) {
         return {
           content: [{

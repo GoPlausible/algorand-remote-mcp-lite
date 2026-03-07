@@ -73,9 +73,10 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
       address: z.string().describe('Account address'),
       limit: z.number().int().optional().describe('Maximum number of assets to return'),
       assetId: z.number().int().optional().describe('Filter by asset ID'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ address, limit, assetId, nextToken }) => {
+    async ({ address, limit, assetId, nextToken, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -112,7 +113,7 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
         // Format response to only return the assets array
         return ResponseProcessor.processResponse({
           assets: response.assets || []
-        });
+        }, pageToken);
       } catch (error: any) {
         return {
           content: [{
@@ -217,9 +218,10 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
       applicationId: z.number().int().optional().describe('Filter by application ID'),
       currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
       currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ limit, assetId, applicationId, currencyGreaterThan, currencyLessThan, nextToken }) => {
+    async ({ limit, assetId, applicationId, currencyGreaterThan, currencyLessThan, nextToken, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -265,7 +267,7 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
         // Format response to only return the accounts array
         return ResponseProcessor.processResponse({
           accounts: response.accounts || []
-        });
+        }, pageToken);
       } catch (error: any) {
         return {
           content: [{

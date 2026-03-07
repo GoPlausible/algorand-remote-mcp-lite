@@ -29,10 +29,11 @@ export function registerAccountApiTools(server: McpServer,env: Env): void {
   server.tool(
     'algod_get_account_info',
     'Get current account balance, assets, and auth address from algod',
-    { 
-      address: z.string().describe('The account public key')
+    {
+      address: z.string().describe('The account public key'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ address }) => {
+    async ({ address, pageToken }) => {
       
       if (!env.ALGORAND_ALGOD) {
         return {
@@ -58,7 +59,7 @@ export function registerAccountApiTools(server: McpServer,env: Env): void {
         // Get account information
         const response = await algodClient.accountInformation(String(address)).do();
         
-        return ResponseProcessor.processResponse(response);
+        return ResponseProcessor.processResponse(response, pageToken);
       } catch (error: any) {
         return {
           content: [{

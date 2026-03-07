@@ -74,9 +74,10 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
       limit: z.number().int().optional().describe('Maximum number of accounts to return'),
       currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
       currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ assetId, limit, currencyGreaterThan, currencyLessThan, nextToken }) => {
+    async ({ assetId, limit, currencyGreaterThan, currencyLessThan, nextToken, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -113,7 +114,7 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
         // Execute lookup
         const response = await search.do();
         
-        return ResponseProcessor.processResponse(response);
+        return ResponseProcessor.processResponse(response, pageToken);
       } catch (error: any) {
         return {
           content: [{
@@ -134,9 +135,10 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
       unit: z.string().optional().describe('Filter by asset unit name'),
       creator: z.string().optional().describe('Filter by creator address'),
       limit: z.number().int().optional().describe('Maximum number of assets to return'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ name, unit, creator, limit, nextToken }) => {
+    async ({ name, unit, creator, limit, nextToken, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -176,7 +178,7 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
         // Execute search
         const response = await search.do();
         
-        return ResponseProcessor.processResponse(response);
+        return ResponseProcessor.processResponse(response, pageToken);
       } catch (error: any) {
         return {
           content: [{

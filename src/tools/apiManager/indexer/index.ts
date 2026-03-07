@@ -25,9 +25,10 @@ export function registerIndexerApiTools(server: McpServer,env: Env): void {
     {
       type: z.enum(['accounts', 'transactions', 'assets', 'applications']).describe('Type of entity to search'),
       query: z.record(z.any()).describe('Query parameters'),
-      limit: z.number().int().min(1).max(1000).default(100).describe('Max number of results')
+      limit: z.number().int().min(1).max(1000).default(100).describe('Max number of results'),
+      pageToken: z.string().optional().describe('Pagination token for paginated results')
     },
-    async ({ type, query, limit }) => {
+    async ({ type, query, limit, pageToken }) => {
       
       if (!env.ALGORAND_INDEXER) {
         return {
@@ -71,7 +72,7 @@ export function registerIndexerApiTools(server: McpServer,env: Env): void {
         }
         
         const data = await response.json();
-        return ResponseProcessor.processResponse(data);
+        return ResponseProcessor.processResponse(data, pageToken);
       } catch (error: any) {
         return {
           content: [{
