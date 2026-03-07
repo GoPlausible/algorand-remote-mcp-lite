@@ -67,6 +67,15 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     resourceUri: walletCardResourceUri,
     description: 'Interactive wallet card UI widget',
   });
+
+  // Register asset portfolio widget resource
+  const assetPortfolioResourceUri = 'ui://wallet/asset-portfolio.html';
+  registerWidget(server, assets, {
+    name: 'asset-portfolio-widget',
+    htmlPath: '/widgets/asset-portfolio.html',
+    resourceUri: assetPortfolioResourceUri,
+    description: 'Interactive asset portfolio grid UI widget',
+  });
   
   // Ensure user has a vault-based account 
   // try {
@@ -286,9 +295,15 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         };
 
         // Return both text fallback and structured content for UI
-        const textResponse = ResponseProcessor.processResponse(walletData, pageToken);
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(walletData, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ address, amount: walletData.accounts[0]?.amount });
+        } catch {
+          textContent = JSON.stringify({ address, amount: walletData.accounts[0]?.amount });
+        }
         return {
-          ...textResponse,
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: walletData,
         };
       } catch (error: any) {
@@ -303,17 +318,23 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
 
   // Get wallet assets
-  server.tool(
+  server.registerTool(
     'wallet_get_assets',
-    'Get the assets for the configured wallet',
     {
-      pageToken: z.string().optional().describe('Pagination token for paginated results'),
+      description: 'Get the assets for the configured wallet',
+      inputSchema: {
+        pageToken: z.string().optional().describe('Pagination token for paginated results'),
+      },
+      _meta: {
+        ui: { resourceUri: assetPortfolioResourceUri },
+        'ui/resourceUri': assetPortfolioResourceUri,
+      },
     },
     async ({ pageToken }) => {
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand node URL not configured'
           }]
         };
@@ -326,7 +347,7 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         if (!address) {
           return {
             content: [{
-              type: 'text',
+              type: 'text' as const,
               text: 'No active agent wallet configured'
             }]
           };
@@ -341,15 +362,56 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         // Get account information
         const accountInfo = await algodClient.accountInformation(address).do();
 
-        return ResponseProcessor.processResponse({
-          assets: accountInfo.assets || [],
+        const allAssets = (accountInfo.assets || []).map((a: any) => ({
+          assetId: Number(a.assetId ?? a['asset-id']),
+          amount: Number(a.amount),
+          isFrozen: Boolean(a.isFrozen ?? a['is-frozen']),
+        }));
+
+        // Paginate for widget
+        const perPage = 10;
+        const pageNum = pageToken ? (() => {
+          try { return Number.parseInt(atob(pageToken).replace('page_', '')) || 1; } catch { return 1; }
+        })() : 1;
+        const startIdx = (pageNum - 1) * perPage;
+        const endIdx = startIdx + perPage;
+        const paginatedAssets = allAssets.slice(startIdx, endIdx);
+        const totalPages = Math.ceil(allAssets.length / perPage);
+
+        const assetPortfolio = {
+          address,
           user: props.email,
           provider: props.provider,
-        }, pageToken);
+          assets: paginatedAssets,
+          totalAssets: allAssets.length,
+          pagination: allAssets.length > perPage ? {
+            currentPage: pageNum,
+            totalPages,
+            hasNextPage: endIdx < allAssets.length,
+            hasPrevPage: pageNum > 1,
+          } : undefined,
+        };
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse({
+            assets: allAssets,
+            user: props.email,
+            provider: props.provider,
+          }, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ assetCount: allAssets.length });
+        } catch {
+          textContent = JSON.stringify({ assetCount: allAssets.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { assetPortfolio },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Failed to get asset info: ${error.message || 'Unknown error'}`
           }]
         };

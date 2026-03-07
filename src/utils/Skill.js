@@ -55,7 +55,7 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 7. **Use knowledge tools** for developer documentation: \`get_knowledge_doc\` with category prefix (e.g., 'arcs:specs:arc-0003.md')
 8. **Warn about unverified assets** — always check verification status before transacting unknown ASAs
 9. **Simulate critical transactions** before submitting with \`simulate_transactions\` to catch errors without spending funds
-10. **Prefer Haystack Router for swaps** — it finds the best price across multiple DEXes automatically; use Tinyman directly only when you need pool analytics, liquidity management, or pool creation
+10. **Use Haystack Router for swaps** — it finds the best price across multiple DEXes automatically; 
 11. **Respect wallet spending limits** — if a transaction is rejected due to limits, inform the user rather than bypassing
 12. **Verify recipients** — use \`validate_address\` to confirm addresses before sending, and always confirm with the user
 
@@ -148,23 +148,8 @@ You can perform the following operations through the Algorand Remote MCP tools:
 
 **CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
 
-### 7. Tinyman AMM (DEX)
 
-Tinyman is an Automated Market Maker (AMM) DEX on Algorand. These tools provide direct access to Tinyman V2 pools for swaps, liquidity, and pool management.
-
-| Tool | Purpose |
-|------|---------|
-| \`api_tinyman_get_pool\` | Get pool information (reserves, fees, TVL) |
-| \`api_tinyman_get_pool_analytics\` | Get pool analytics (volume, APR, historical data) |
-| \`api_tinyman_get_swap_quote\` | Get swap quote with transaction data for signing |
-| \`api_tinyman_get_liquidity_quote\` | Get quote for adding liquidity to a pool |
-| \`api_tinyman_get_remove_liquidity_quote\` | Get quote for removing liquidity from a pool |
-| \`api_tinyman_get_pool_creation_quote\` | Get quote for creating a new liquidity pool |
-| \`api_tinyman_get_asset_optin_quote\` | Get transaction for opting into an asset via Tinyman |
-| \`api_tinyman_get_validator_optin_quote\` | Get transaction for opting into Tinyman validator |
-| \`api_tinyman_get_validator_optout_quote\` | Get transaction for opting out of Tinyman validator |
-
-### 8. Haystack Router (DEX Aggregator)
+### 7. Haystack Router (DEX Aggregator)
 
 Haystack Router is a DEX aggregator and smart order routing protocol on Algorand. It finds optimal swap routes across multiple DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO), then executes them atomically through on-chain smart contracts.
 
@@ -517,75 +502,6 @@ For each swap pair:
 | Transaction rejected | User declined or signing failed | Retry after confirmation |
 | Stale quote | Too much time between quote and execute | Refetch quote — \`api_haystack_execute_swap\` gets a fresh quote automatically |
 
-### Tinyman AMM Swap
-
-Tinyman provides direct AMM swaps through its V2 pools. Use Tinyman when you need direct pool access, liquidity management, or pool analytics. For best-price routing across multiple DEXes, prefer Haystack Router.
-
-**Tinyman tool parameters:**
-\`\`\`
-// Get pool info
-api_tinyman_get_pool {
-  asset1Id: 0,          // First asset (0 = ALGO)
-  asset2Id: 31566704,   // Second asset (USDC)
-  version: "v2",        // Pool version
-  network: "mainnet"
-}
-
-// Get swap quote
-api_tinyman_get_swap_quote {
-  asset1Id: 0,          // Input asset
-  asset2Id: 31566704,   // Output asset
-  amount: 1000000,      // Amount in base units
-  network: "mainnet"
-}
-
-// Get pool analytics (volume, TVL, fees)
-api_tinyman_get_pool_analytics {
-  asset1Id: 0,
-  asset2Id: 31566704,
-  network: "mainnet"
-}
-\`\`\`
-
-**Swap workflow:**
-
-| Step | Tool | Purpose |
-|------|------|---------|
-| 1 | \`wallet_get_info\` | Verify active account, check balance |
-| 2 | \`api_tinyman_get_pool\` | Check pool exists and has sufficient liquidity |
-| 3 | \`api_tinyman_get_swap_quote\` | Get swap quote with transaction data |
-| 4 | Build transactions from quote response | Parse the returned transaction group |
-| 5 | \`wallet_sign_transaction_group\` | Sign the atomic transaction group |
-| 6 | \`send_raw_transaction\` | Submit signed transactions to network |
-
-**Liquidity management workflow:**
-
-| Step | Tool | Purpose |
-|------|------|---------|
-| 1 | \`api_tinyman_get_pool\` | Get pool details (reserves, pool token) |
-| 2 | \`api_tinyman_get_pool_analytics\` | Check pool APR, volume, TVL |
-| 3 | \`api_tinyman_get_liquidity_quote\` | Get add-liquidity quote |
-| 4 | Build and sign transactions from quote | Sign the group via wallet |
-| 5 | \`send_raw_transaction\` | Submit to network |
-
-**Pool creation workflow:**
-\`\`\`
-1. wallet_get_info → verify balance (pool creation requires MBR)
-2. api_tinyman_get_pool_creation_quote → get pool creation transactions
-3. Build, sign, and submit the transaction group
-\`\`\`
-
-**Tinyman vs Haystack Router:**
-| Feature | Tinyman | Haystack Router |
-|---------|---------|-----------------|
-| Swap pricing | Single AMM pool | Best price across Tinyman, Pact, Folks |
-| Multi-hop | No | Yes (automatic) |
-| Liquidity management | Yes (add/remove) | No |
-| Pool analytics | Yes | No |
-| Pool creation | Yes | No |
-| Signing | Manual (wallet_sign_transaction_group) | Automatic (built into execute_swap) |
-| Use when | Direct pool access, liquidity, analytics | Best-price swaps, convenience |
-
 ### Query Account Information
 \`\`\`
 - Live state: api_algod_get_account_info
@@ -600,7 +516,7 @@ api_tinyman_get_pool_analytics {
 3. Use depositAccount as transaction recipient
 \`\`\`
 
-## Swap Direction Rules (Haystack Router & Tinyman)
+## Swap Direction Rules (Haystack Router)
 
 The \`type\` parameter determines whether the \`amount\` is the exact input or the exact output. **Getting this wrong means the user spends or receives the wrong amount.**
 

@@ -8,13 +8,14 @@ import * as algosdk from 'algosdk';
 import * as msgpack from 'algo-msgpack-with-bigint';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResponseProcessor } from '../../../utils';
-import { Env, Props } from '../../../types';
+import type { Env, Props } from '../../../types';
 import { getRouterClient } from './routerClient';
 import {
   getUserAddress,
   getPublicKey,
   signWithTransit
 } from '../../../utils/vaultManager';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
 function ConcatArrays(...arrs: ArrayLike<number>[]) {
   const size = arrs.reduce((sum, arr) => sum + arr.length, 0);
@@ -30,19 +31,34 @@ function ConcatArrays(...arrs: ArrayLike<number>[]) {
 /**
  * Register Haystack Router tools to the MCP server
  */
-export function registerHaystackRouterTools(server: McpServer, env: Env, props: Props): void {
+export function registerHaystackRouterTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+  // Register swap quote widget
+  const swapQuoteResourceUri = 'ui://swap/swap-quote-card.html';
+  registerWidget(server, assets, {
+    name: 'swap-quote-card-widget',
+    htmlPath: '/widgets/swap-quote-card.html',
+    resourceUri: swapQuoteResourceUri,
+    description: 'Interactive swap quote card UI widget',
+  });
+
   // Get swap quote
-  server.tool(
+  server.registerTool(
     'haystack_get_swap_quote',
-    'Get an optimized swap quote from Haystack Router — a DEX aggregator that finds the best swap route across multiple Algorand DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO). Returns the best-price quote with route details, USD values, and price impact. All amounts are in base units (e.g., 1000000 = 1 ALGO).',
     {
-      fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
-      type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type: fixed-input or fixed-output'),
-      address: z.string().optional().describe('User Algorand address (optional, needed for auto opt-in detection)'),
-      maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
-      maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops')
+      description: 'Get an optimized swap quote from Haystack Router — a DEX aggregator that finds the best swap route across multiple Algorand DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO). Returns the best-price quote with route details, USD values, and price impact. All amounts are in base units (e.g., 1000000 = 1 ALGO).',
+      inputSchema: {
+        fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
+        type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type: fixed-input or fixed-output'),
+        address: z.string().optional().describe('User Algorand address (optional, needed for auto opt-in detection)'),
+        maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
+        maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops')
+      },
+      _meta: {
+        ui: { resourceUri: swapQuoteResourceUri },
+        'ui/resourceUri': swapQuoteResourceUri,
+      },
     },
     async ({ fromASAID, toASAID, amount, type, address, maxGroupSize, maxDepth }) => {
       try {
@@ -82,11 +98,27 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
           result.address = quote.address;
         }
 
-        return ResponseProcessor.processResponse(result);
+        // Sanitize result to ensure no BigInt values remain (route/flattenedRoute may contain them)
+        const safeResult = JSON.parse(JSON.stringify(result, (_k, v) =>
+          typeof v === 'bigint' ? (v >= Number.MIN_SAFE_INTEGER && v <= Number.MAX_SAFE_INTEGER ? Number(v) : v.toString()) : v
+        ));
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(safeResult);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify(safeResult);
+        } catch {
+          textContent = JSON.stringify(safeResult);
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { swapQuote: safeResult },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Failed to get Haystack swap quote: ${error.message || 'Unknown error'}`
           }]
         };

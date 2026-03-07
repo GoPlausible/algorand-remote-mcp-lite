@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../types';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import { generate } from '@juit/qrcode'
 import { getLogo, getBgPng } from '../logoUrl'
 
@@ -250,19 +251,34 @@ async function generateAlgorandReceipt(params: any): Promise<{ url: string; qrCo
 /**
  * Register Receipt tools to the MCP server
  */
-export function registerReceiptTools(server: McpServer, env: Env, props: Props): void {
+export function registerReceiptTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
   console.log('Registering Receipt tools for Algorand Remote MCP');
 
-  server.tool(
+  // Register receipt card widget
+  const receiptCardResourceUri = 'ui://receipt/receipt-card.html';
+  registerWidget(server, assets, {
+    name: 'receipt-card-widget',
+    htmlPath: '/widgets/receipt-card.html',
+    resourceUri: receiptCardResourceUri,
+    description: 'Interactive transaction receipt UI widget',
+  });
+
+  server.registerTool(
     'generate_algorand_receipt',
-    'Generate a Receipt and QRCode of it, for an Algorand payment or asset transfer',
     {
-      sender: z.string().describe('Algorand address (58 characters)'),
-      receiver: z.string().describe('Algorand address (58 characters)'),
-      amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
-      assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
-      txId: z.string().describe('Transaction hash'),
-      note: z.string().optional().describe('Optional note')
+      description: 'Generate a Receipt and QRCode of it, for an Algorand payment or asset transfer',
+      inputSchema: {
+        sender: z.string().describe('Algorand address (58 characters)'),
+        receiver: z.string().describe('Algorand address (58 characters)'),
+        amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
+        assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
+        txId: z.string().describe('Transaction hash'),
+        note: z.string().optional().describe('Optional note')
+      },
+      _meta: {
+        ui: { resourceUri: receiptCardResourceUri },
+        'ui/resourceUri': receiptCardResourceUri,
+      },
     },
     async ({ sender, receiver, amount, assetId, note, txId }) => {
       try {
@@ -280,8 +296,7 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props):
 
         const { url, qrCode } = await generateAlgorandReceipt(toolArgs);
         console.log('Generated Receipt URL:', url);
-        console.log('Generated Receipt QR Code (base64 PNG):', qrCode);
-        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 * 7 }); // Cache for 7 days
+        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 * 7 });
 
         const htmlPage = buildHTMLPage({
           provider: props.provider,
@@ -295,19 +310,35 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props):
           amount,
           asset: assetId,
           note,
-        })
-        await env.ARC26_KV?.put(`rid--${uuid}`, htmlPage, { expirationTtl: 86400 * 7 }); // Cache for 7 days
+        });
+        await env.ARC26_KV?.put(`rid--${uuid}`, htmlPage, { expirationTtl: 86400 * 7 });
 
-        return ResponseProcessor.processResponse({
+        const receiptLink = `https://goplausible.xyz/api/receipt/${uuid}`;
+
+        const textResponse = ResponseProcessor.processResponse({
           label: "Algorand Agency Receipt link (valid for 7 days)",
-          qrcode_link: `https://goplausible.xyz/api/receipt/${uuid}`,
+          qrcode_link: receiptLink,
         });
 
-
+        return {
+          ...textResponse,
+          structuredContent: {
+            receipt: {
+              sender,
+              receiver,
+              amount,
+              assetId,
+              txId,
+              note,
+              receiptLink,
+              createdAt: new Date().toISOString(),
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error generating Algorand Receipt: ${error.message || 'Unknown error'}`
           }]
         };

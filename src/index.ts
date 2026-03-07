@@ -23,7 +23,7 @@ import {
 	// registerKnowledgeTools,
 	registerWalletTools,
 	registerAp2Tools,
-	registerTinymanTools
+	// registerTinymanTools
 } from './tools';
 import { registerSkillResource } from './resources';
 
@@ -33,7 +33,7 @@ import { registerSkillResource } from './resources';
 export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	server = new McpServer({
 		name: "Algorand Remote MCP Lite",
-		version: "1.8.0",
+		version: "1.9.0",
 		description: "Algorand Remote MCP Lite (aka Wallet Edition) for interacting with the Algorand blockchain. Use algorand_mcp_skill tool at start of each session to learn how to interact and operate Algorand Remote MCP Lite.",
 	});
 
@@ -86,7 +86,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		this.registerAccountTools();
 		await this.registerTransactionTools();
 		this.registerBasicUtilityTools();
-		await this.registerTinymanTools()
+		// await this.registerTinymanTools()
 		// Additional tool categories will be added here
 	}
 
@@ -154,14 +154,14 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerArc26Tools() {
 		// Register ARC-26 URI generation tools
-		registerArc26Tools(this.server, this.env, this.props);
+		registerArc26Tools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 	/**
 	 * Register Receipt URI generation tools
 	 */
 	private registerReceiptTools() {
 		// Register ARC-26 URI generation tools
-		registerReceiptTools(this.server, this.env, this.props);
+		registerReceiptTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	/**
@@ -192,15 +192,15 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private async registerAp2Tools() {
 		// Register AP2 mandate tools
-		await registerAp2Tools(this.server, this.env, this.props);
+		await registerAp2Tools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 	/**
 	 * Register Wallet tools for wallet information access
 	 */
-	private async registerTinymanTools() {
-		// Register wallet management tools
-		await registerTinymanTools(this.server, this.env, this.props);
-	}
+	// private async registerTinymanTools() {
+	// 	// Register wallet management tools
+	// 	await registerTinymanTools(this.server, this.env, this.props);
+	// }
 	onStateUpdate(state: State) {
 		// console.log({ stateUpdate: state });
 	}

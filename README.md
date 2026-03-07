@@ -62,10 +62,10 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 - `sdk_submit_transaction`: Submit a signed transaction to the Algorand network
 
 ### Asset Transactions
-- `sdk_txn_create_asset`: Create a new Algorand Standard Asset (ASA)
+- `sdk_txn_asset_create`: Create a new Algorand Standard Asset (ASA)
 - `sdk_txn_asset_optin`: Opt-in to an Algorand Standard Asset (ASA)
 - `wallet_usdc_optin`: Opt-in agent wallet to USDC
-- `sdk_txn_transfer_asset`: Transfer an Algorand Standard Asset (ASA)
+- `sdk_txn_asset_transfer`: Transfer an Algorand Standard Asset (ASA)
 
 ### Atomic Groups
 - `sdk_assign_group_id`: To group transactions in atomic way (one fails all fail), assign a group ID to a set of transactions for atomic execution
@@ -103,9 +103,9 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 ### AP2
 - `generate_ap2_mandate`: Create an AP2 intent, cart or payment mandate for AP2 process and flow using fields: id, type (mandate type), items, total, currency, merchant_public_key, payment_requirements, merchant_agent (id) and cart_request_id then returns an stringified object containing verifiableCredential and verifiableCredentialLink.
 
-### Tinyman
+<!-- ### Tinyman
 - `tinyman_fixed_input_swap`: Execute a swap with a fixed input amount
-- `tinyman_fixed_output_swap`: Execute a swap with a fixed output amount
+- `tinyman_fixed_output_swap`: Execute a swap with a fixed output amount -->
 
 ## Resources (5)
 

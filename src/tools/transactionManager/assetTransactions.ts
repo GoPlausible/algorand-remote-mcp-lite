@@ -44,7 +44,7 @@ function ConcatArrays(...arrs: ArrayLike<number>[]) {
 export function registerAssetTransactionTools(server: McpServer, env: Env, props: Props): void {
   // Create a new Algorand Standard Asset (ASA)
   server.tool(
-    'sdk_txn_create_asset',
+    'sdk_txn_asset_create',
     'Create a new Algorand Standard Asset (ASA)',
     {
       creator: z.string().describe('Creator address'),
@@ -312,7 +312,7 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
 
   // Transfer asset
   server.tool(
-    'sdk_txn_transfer_asset',
+    'sdk_txn_asset_transfer',
     'Transfer an Algorand Standard Asset (ASA)',
     {
       sender: z.string().describe('Sender address'),

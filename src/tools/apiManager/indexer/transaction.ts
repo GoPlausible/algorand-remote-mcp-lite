@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
 /**
  * Create and validate an Indexer client
@@ -24,41 +25,126 @@ function createIndexerClient(indexerUrl: string | undefined): algosdk.Indexer | 
 /**
  * Register indexer transaction API tools to the MCP server
  */
-export function registerIndexerTransactionTools(server: McpServer,env: Env): void {
-  // Lookup transaction by ID
-  server.tool(
+export function registerIndexerTransactionTools(server: McpServer, env: Env, assets?: AssetsBinding): void {
+  // Register transaction history widget
+  const txnHistoryResourceUri = 'ui://txn/txn-history.html';
+  registerWidget(server, assets, {
+    name: 'txn-history-widget',
+    htmlPath: '/widgets/txn-history.html',
+    resourceUri: txnHistoryResourceUri,
+    description: 'Interactive transaction history UI widget',
+  });
+
+  // Register transaction detail widget (LORA-style flow diagram)
+  const txnDetailResourceUri = 'ui://txn/txn-detail.html';
+  registerWidget(server, assets, {
+    name: 'txn-detail-widget',
+    htmlPath: '/widgets/txn-detail.html',
+    resourceUri: txnDetailResourceUri,
+    description: 'LORA-style transaction flow diagram UI widget',
+  });
+
+  // Normalize indexer transaction data recursively (handles both camelCase and kebab-case)
+  function normalizeTxn(t: any): any {
+    const pt = t.paymentTransaction ?? t['payment-transaction'];
+    const at = t.assetTransferTransaction ?? t['asset-transfer-transaction'];
+    const appl = t.applicationTransaction ?? t['application-transaction'];
+    const acfg = t.assetConfigTransaction ?? t['asset-config-transaction'];
+    const afrz = t.assetFreezeTransaction ?? t['asset-freeze-transaction'];
+    const innerRaw = t.innerTxns ?? t['inner-txns'] ?? [];
+
+    return {
+      id: t.id ?? undefined,
+      type: t.txType ?? t['tx-type'] ?? 'unknown',
+      sender: t.sender,
+      fee: Number(t.fee ?? 0),
+      confirmedRound: Number(t.confirmedRound ?? t['confirmed-round'] ?? 0),
+      roundTime: Number(t.roundTime ?? t['round-time'] ?? 0),
+      group: t.group ?? undefined,
+      note: t.note ?? undefined,
+      paymentTransaction: pt ? {
+        amount: Number(pt.amount ?? 0),
+        receiver: pt.receiver,
+        closeRemainderTo: pt.closeRemainderTo ?? pt['close-remainder-to'] ?? undefined,
+      } : undefined,
+      assetTransferTransaction: at ? {
+        assetId: Number(at.assetId ?? at['asset-id'] ?? 0),
+        amount: Number(at.amount ?? 0),
+        receiver: at.receiver,
+        sender: at.sender ?? undefined,
+        closeTo: at.closeTo ?? at['close-to'] ?? undefined,
+      } : undefined,
+      applicationTransaction: appl ? {
+        applicationId: Number(appl.applicationId ?? appl['application-id'] ?? 0),
+        onCompletion: appl.onCompletion ?? appl['on-completion'] ?? 'noop',
+        applicationArgs: appl.applicationArgs ?? appl['application-args'] ?? undefined,
+        foreignApps: appl.foreignApps ?? appl['foreign-apps'] ?? undefined,
+        foreignAssets: appl.foreignAssets ?? appl['foreign-assets'] ?? undefined,
+      } : undefined,
+      assetConfigTransaction: acfg ? {
+        assetId: Number(acfg.assetId ?? acfg['asset-id'] ?? 0),
+        params: acfg.params ?? undefined,
+      } : undefined,
+      assetFreezeTransaction: afrz ? {
+        assetId: Number(afrz.assetId ?? afrz['asset-id'] ?? 0),
+        address: afrz.address,
+        newFreezeStatus: afrz.newFreezeStatus ?? afrz['new-freeze-status'] ?? false,
+      } : undefined,
+      innerTxns: innerRaw.map((inner: any) => normalizeTxn(inner)),
+      createdApplicationIndex: Number(t.createdApplicationIndex ?? t['created-application-index'] ?? 0),
+      createdAssetIndex: Number(t.createdAssetIndex ?? t['created-asset-index'] ?? 0),
+    };
+  }
+
+  // Lookup transaction by ID (with LORA-style flow diagram UI)
+  server.registerTool(
     'indexer_lookup_transaction_by_id',
-    'Get transaction details from indexer',
-    { 
-      txid: z.string().describe('Transaction ID'),
-      pageToken: z.string().optional().describe('Pagination token for paginated results')
+    {
+      description: 'Get transaction details from indexer with flow visualization',
+      inputSchema: {
+        txid: z.string().describe('Transaction ID'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: txnDetailResourceUri },
+        'ui/resourceUri': txnDetailResourceUri,
+      },
     },
     async ({ txid, pageToken }) => {
-      
+
       if (!env.ALGORAND_INDEXER) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand indexer URL not configured'
           }]
         };
       }
-      
+
       try {
         // Create indexer client
         const indexerClient = createIndexerClient(env.ALGORAND_INDEXER);
         if (!indexerClient) {
           throw new Error('Failed to create Algorand indexer client');
         }
-        
+
         // Lookup transaction by ID
         const response = await indexerClient.lookupTransactionByID(String(txid)).do();
-        
-        return ResponseProcessor.processResponse(response, pageToken);
+        const rawTxn = response.transaction ?? response;
+        const transaction = normalizeTxn(rawTxn);
+
+        const textResponse = ResponseProcessor.processResponse(response, pageToken);
+
+        return {
+          ...textResponse,
+          structuredContent: {
+            txnDetail: { transaction },
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error looking up transaction: ${error.message || 'Unknown error'}`
           }]
         };
@@ -66,25 +152,31 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
     }
   );
   
-  // Lookup account transactions
-  server.tool(
+  // Lookup account transactions (with UI)
+  server.registerTool(
     'indexer_lookup_account_transactions',
-    'Get transactions related to an account',
-    { 
-      address: z.string().describe('Account address'),
-      limit: z.number().int().optional().describe('Maximum number of transactions to return'),
-      txType: z.string().optional().describe('Filter by transaction type'),
-      sigType: z.string().optional().describe('Filter by signature type'),
-      assetId: z.number().int().optional().describe('Filter by asset ID'),
-      beforeTime: z.string().optional().describe('Return transactions before this time (RFC 3339 format)'),
-      afterTime: z.string().optional().describe('Return transactions after this time (RFC 3339 format)'),
-      currencyGreaterThan: z.number().int().optional().describe('Return transactions with amount greater than this value'),
-      currencyLessThan: z.number().int().optional().describe('Return transactions with amount less than this value'),
-      round: z.number().int().optional().describe('Return transactions for a specific round'),
-      minRound: z.number().int().optional().describe('Return transactions after this round'),
-      maxRound: z.number().int().optional().describe('Return transactions before this round'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
-      pageToken: z.string().optional().describe('Pagination token for paginated results')
+    {
+      description: 'Get transactions related to an account',
+      inputSchema: {
+        address: z.string().describe('Account address'),
+        limit: z.number().int().optional().describe('Maximum number of transactions to return'),
+        txType: z.string().optional().describe('Filter by transaction type'),
+        sigType: z.string().optional().describe('Filter by signature type'),
+        assetId: z.number().int().optional().describe('Filter by asset ID'),
+        beforeTime: z.string().optional().describe('Return transactions before this time (RFC 3339 format)'),
+        afterTime: z.string().optional().describe('Return transactions after this time (RFC 3339 format)'),
+        currencyGreaterThan: z.number().int().optional().describe('Return transactions with amount greater than this value'),
+        currencyLessThan: z.number().int().optional().describe('Return transactions with amount less than this value'),
+        round: z.number().int().optional().describe('Return transactions for a specific round'),
+        minRound: z.number().int().optional().describe('Return transactions after this round'),
+        maxRound: z.number().int().optional().describe('Return transactions before this round'),
+        nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: txnHistoryResourceUri },
+        'ui/resourceUri': txnHistoryResourceUri,
+      },
     },
     async ({ address, limit, txType, sigType, assetId, beforeTime, afterTime,
              currencyGreaterThan, currencyLessThan, round, minRound, maxRound, nextToken, pageToken }) => {
@@ -108,9 +200,8 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
         // Setup lookup with parameters
         let search = indexerClient.lookupAccountTransactions(String(address));
         
-        if (limit) {
-          search = search.limit(Number(limit));
-        }
+        // Default limit to prevent massive responses that timeout on Workers
+        search = search.limit(limit ? Number(limit) : 20);
         if (txType) {
           search = search.txType(String(txType));
         }
@@ -147,19 +238,73 @@ export function registerIndexerTransactionTools(server: McpServer,env: Env): voi
         
         // Execute lookup
         const response = await search.do();
-        
-        return ResponseProcessor.processResponse(response, pageToken);
+
+        // Build structured content for the widget
+        const allTxns = (response.transactions || []).map((t: any) => {
+          const pt = t.paymentTransaction ?? t['payment-transaction'];
+          const at = t.assetTransferTransaction ?? t['asset-transfer-transaction'];
+          const appl = t.applicationTransaction ?? t['application-transaction'];
+          return {
+            id: t.id,
+            type: t.txType ?? t['tx-type'] ?? 'unknown',
+            sender: t.sender,
+            fee: Number(t.fee),
+            confirmedRound: Number(t.confirmedRound ?? t['confirmed-round'] ?? 0),
+            roundTime: Number(t.roundTime ?? t['round-time'] ?? 0),
+            paymentTransaction: pt ? {
+              amount: Number(pt.amount ?? 0),
+              receiver: pt.receiver,
+              closeRemainderTo: pt.closeRemainderTo ?? pt['close-remainder-to'] ?? undefined,
+            } : undefined,
+            assetTransferTransaction: at ? {
+              assetId: Number(at.assetId ?? at['asset-id'] ?? 0),
+              amount: Number(at.amount ?? 0),
+              receiver: at.receiver,
+              sender: at.sender ?? undefined,
+            } : undefined,
+            applicationTransaction: appl ? {
+              applicationId: Number(appl.applicationId ?? appl['application-id'] ?? 0),
+              onCompletion: appl.onCompletion ?? appl['on-completion'] ?? 'noop',
+            } : undefined,
+            note: t.note ?? undefined,
+            group: t.group ?? undefined,
+          };
+        });
+
+        // Pass indexer's native next-token for real pagination across full transaction history
+        const indexerNextToken = response['next-token'] ?? response.nextToken ?? null;
+
+        const txnHistory = {
+          address,
+          transactions: allTxns,
+          totalTransactions: allTxns.length,
+          indexerNextToken: indexerNextToken ? String(indexerNextToken) : null,
+        };
+
+        // Build text fallback — use a lightweight summary instead of processing the full raw response
+        // which can timeout on Workers due to recursive serialization in processResponse
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(response, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ address, transactionCount: allTxns.length });
+        } catch {
+          textContent = JSON.stringify({ address, transactionCount: allTxns.length });
+        }
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { txnHistory },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error looking up account transactions: ${error.message || 'Unknown error'}`
           }]
         };
       }
     }
   );
-  
+
   // Search for transactions
   // server.tool(
   //   'indexer_search_for_transactions',

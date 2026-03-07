@@ -1,0 +1,289 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: transparent;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.mc-card {
+  background: var(--color-background-primary, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: var(--border-radius-lg, 16px);
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+/* Header with indigo gradient */
+.mc-header {
+  background: linear-gradient(135deg, #4338ca, #6366f1);
+  padding: 20px 24px;
+  color: white;
+}
+
+.mc-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.mc-title {
+  font-size: var(--font-heading-md-size, 18px);
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+/* Type badges */
+.mc-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mc-badge-intent {
+  color: #ffffff;
+  background: rgba(59, 130, 246, 0.5);
+}
+
+.mc-badge-cart {
+  color: #ffffff;
+  background: rgba(245, 158, 11, 0.55);
+}
+
+.mc-badge-payment {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.5);
+}
+
+.mc-id {
+  font-size: 11px;
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  opacity: 0.8;
+  letter-spacing: 0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Body */
+.mc-body {
+  padding: 20px 24px 24px;
+}
+
+/* Items table */
+.mc-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+
+.mc-items-table th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 0 10px;
+  border-bottom: 2px solid var(--color-border-primary, #e2e8f0);
+}
+
+.mc-th-label {
+  text-align: left;
+}
+
+.mc-th-amount {
+  text-align: right;
+}
+
+.mc-item-row td {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.mc-item-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.mc-item-amount {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  text-align: right;
+  letter-spacing: 0.2px;
+}
+
+.mc-total-row td {
+  padding: 12px 0 4px;
+  border-top: 2px solid var(--color-border-primary, #e2e8f0);
+}
+
+.mc-total-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.mc-total-amount {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary, #1a1a2e);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  text-align: right;
+  letter-spacing: -0.3px;
+}
+
+/* Currency badge */
+.mc-currency-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4338ca;
+  background: rgba(67, 56, 202, 0.08);
+  padding: 3px 10px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+/* Detail rows */
+.mc-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mc-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--color-border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.mc-detail-row:last-child {
+  border-bottom: none;
+}
+
+.mc-detail-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.mc-detail-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+  text-align: right;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-mono {
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+/* Loading state */
+.mc-card.mc-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 16px;
+  padding: 24px;
+}
+
+.mc-loading-pulse {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4338ca, #6366f1);
+  animation: mc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes mc-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.mc-loading-text {
+  font-size: 14px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* Error state */
+.mc-card.mc-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  gap: 12px;
+  padding: 24px;
+}
+
+.mc-error-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fecaca;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.mc-error-text {
+  font-size: 14px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* Dark mode */
+[data-theme="dark"] .mc-card {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .mc-error-icon {
+  background: rgba(220, 38, 38, 0.2);
+}
+
+[data-theme="dark"] .mc-currency-badge {
+  color: #818cf8;
+  background: rgba(129, 140, 248, 0.12);
+}
+
+[data-theme="dark"] .mc-badge-intent {
+  color: #ffffff;
+  background: rgba(59, 130, 246, 0.45);
+}
+
+[data-theme="dark"] .mc-badge-cart {
+  color: #ffffff;
+  background: rgba(245, 158, 11, 0.45);
+}
+
+[data-theme="dark"] .mc-badge-payment {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.45);
+}

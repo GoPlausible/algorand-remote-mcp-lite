@@ -142,10 +142,16 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         };
 
         const combinedData = { ...nfdData, account: { address: depositAddress, amount: accountAmount, assets: accountAssets } };
-        const textResponse = ResponseProcessor.processResponse(combinedData, pageToken);
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(combinedData, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ name: nfdAccount.nfdName, address: depositAddress });
+        } catch {
+          textContent = JSON.stringify({ name: nfdAccount.nfdName, address: depositAddress });
+        }
 
         return {
-          ...textResponse,
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: { nfdAccount },
         };
       } catch (error: any) {
@@ -159,15 +165,31 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
     }
   );
 
+  // Register NFD list widget
+  const nfdListResourceUri = 'ui://nfd/nfd-list.html';
+  registerWidget(server, assets, {
+    name: 'nfd-list-widget',
+    htmlPath: '/widgets/nfd-list.html',
+    resourceUri: nfdListResourceUri,
+    description: 'NFD names list for an address UI widget',
+    resourceDomains: ['https://ipfs.io', 'https://gateway.pinata.cloud', 'https://cloudflare-ipfs.com'],
+  });
+
   // Get NFDs for address
-  server.tool(
+  server.registerTool(
     'api_nfd_get_nfds_for_address',
-    'Get all NFD names owned by an Algorand address',
     {
-      address: z.string().describe('Algorand address'),
-      limit: z.number().optional().default(50).describe('Maximum number of results'),
-      offset: z.number().optional().default(0).describe('Offset for pagination'),
-      view: z.enum(['brief', 'full']).optional().default('brief').describe('View type - brief or full')
+      description: 'Get all NFD names owned by an Algorand address',
+      inputSchema: {
+        address: z.string().describe('Algorand address'),
+        limit: z.number().optional().default(50).describe('Maximum number of results'),
+        offset: z.number().optional().default(0).describe('Offset for pagination'),
+        view: z.enum(['brief', 'full']).optional().default('brief').describe('View type - brief or full')
+      },
+      _meta: {
+        ui: { resourceUri: nfdListResourceUri },
+        'ui/resourceUri': nfdListResourceUri,
+      },
     },
     async ({ address, limit, offset, view }) => {
       try {
@@ -195,12 +217,42 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
           throw new Error(`NFD address lookup failed with status: ${response.status}`);
         }
 
-        const data = await response.json();
-        return ResponseProcessor.processResponse(data);
+        const data: any = await response.json();
+        const nfds = Array.isArray(data) ? data : [];
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(data);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ address, nfdCount: nfds.length });
+        } catch {
+          textContent = JSON.stringify({ address, nfdCount: nfds.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: {
+            nfdList: {
+              address,
+              nfds: nfds.map((nfd: any) => ({
+                name: nfd.name,
+                category: nfd.category || null,
+                state: nfd.state || null,
+                owner: nfd.owner || null,
+                depositAccount: nfd.depositAccount || nfd.caAlgo?.[0] || null,
+                avatar: (() => {
+                  const raw = nfd.properties?.verified?.avatar || nfd.properties?.userDefined?.avatar || null;
+                  return raw?.startsWith('ipfs://') ? `https://ipfs.io/ipfs/${raw.slice(7)}` : raw;
+                })(),
+                tags: nfd.metaTags || nfd.tags || [],
+              })),
+              totalNfds: nfds.length,
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `NFD domains lookup error: ${error.message || 'Unknown error'}`
           }]
         };

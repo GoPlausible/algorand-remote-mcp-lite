@@ -16,6 +16,7 @@ import {
   getPublicKey,
   signWithTransit
 } from '../utils/vaultManager';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 
 // Zod schemas for mandate types
 const AmountSchema = z.object({
@@ -231,18 +232,28 @@ async function generateVerifiableCredential(env: Env, props: Props, mandateType:
 /**
  * Register AP2 management tools to the MCP server
  */
-export async function registerAp2Tools(server: McpServer, env: Env, props: Props): Promise<void> {
+export async function registerAp2Tools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): Promise<void> {
   // Ensure user has a vault-based account
   if (!props.email || !props.provider) {
     throw new Error('Email and provider must be provided in props');
   }
 
+  // Register mandate card widget
+  const mandateCardResourceUri = 'ui://ap2/mandate-card.html';
+  registerWidget(server, assets, {
+    name: 'mandate-card-widget',
+    htmlPath: '/widgets/mandate-card.html',
+    resourceUri: mandateCardResourceUri,
+    description: 'Interactive AP2 mandate card UI widget',
+  });
+
   // Generate AP2 mandate tool
-  server.tool(
+  server.registerTool(
     'generate_ap2_mandate',
-    'Create an AP2 intent, cart or payment mandate for AP2 process and flow using fields: id, type (mandate type), items, total, currency, merchant_public_key, payment_requirements, merchant_agent (id) and cart_request_id then returns an stringified object containing verifiableCredential and verifiableCredentialLink.',
     {
-      mandate: z.object({
+      description: 'Create an AP2 intent, cart or payment mandate for AP2 process and flow using fields: id, type (mandate type), items, total, currency, merchant_public_key, payment_requirements, merchant_agent (id) and cart_request_id then returns an stringified object containing verifiableCredential and verifiableCredentialLink.',
+      inputSchema: {
+        mandate: z.object({
         id: z.string().describe("Unique identifier for the mandate"),
         type: z.enum(["intent_mandate", "cart_mandate", "payment_mandate"]).describe("Mandate type for AP2 flow"),
 
@@ -282,6 +293,11 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
         refund_period: z.string().optional().describe("Refund period in ISO-8601 duration format (e.g., P30D = 30 days)"),
         cart_request_id: z.string().optional().describe("Associated cart or payment request ID"),
       })
+      },
+      _meta: {
+        ui: { resourceUri: mandateCardResourceUri },
+        'ui/resourceUri': mandateCardResourceUri,
+      },
     },
     async ({ mandate }) => {
       if (!env.ALGORAND_ALGOD) {
@@ -444,20 +460,35 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
         await env.A2A_AP2_STORE.put(key, value, { expirationTtl: 24 * 60 * 60 });
         console.log('Stored VC in KV with key:', key);
         console.log('Generated verifiable credential:', verifiableCredential);
+        const createdAt = new Date().toISOString();
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: JSON.stringify({
               verifiableCredentialLink: key,
               type: type,
               verifiableCredential: verifiableCredential
             }, null, 2)
-          }]
+          }],
+          structuredContent: {
+            mandate: {
+              type: mandate.type,
+              id: mandate.id,
+              currency: mandate.currency,
+              total: mandate.total,
+              items: mandate.items,
+              merchantPublicKey: mandate.merchant_public_key,
+              merchantAgent: mandate.merchant_agent,
+              refundPeriod: mandate.refund_period,
+              vcLink: key,
+              createdAt,
+            }
+          },
         };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error creating mandate: ${error.message || 'Unknown error'}`
           }]
         };

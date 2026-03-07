@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
 /**
  * Create and validate an Indexer client
@@ -24,7 +25,24 @@ function createIndexerClient(indexerUrl: string | undefined): algosdk.Indexer | 
 /**
  * Register indexer account API tools to the MCP server
  */
-export function registerIndexerAccountTools(server: McpServer,env: Env): void {
+export function registerIndexerAccountTools(server: McpServer, env: Env, assets?: AssetsBinding): void {
+  // Register account assets widget
+  const accountAssetsResourceUri = 'ui://indexer/account-assets.html';
+  registerWidget(server, assets, {
+    name: 'account-assets-widget',
+    htmlPath: '/widgets/account-assets.html',
+    resourceUri: accountAssetsResourceUri,
+    description: 'Account asset holdings table UI widget',
+  });
+
+  // Register account search widget
+  const accountSearchResourceUri = 'ui://indexer/account-search.html';
+  registerWidget(server, assets, {
+    name: 'account-search-widget',
+    htmlPath: '/widgets/account-search.html',
+    resourceUri: accountSearchResourceUri,
+    description: 'Account search results table UI widget',
+  });
   // Lookup account by ID
   // server.tool(
   //   'indexer_lookup_account_by_id',
@@ -66,37 +84,43 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
   // );
   
   // Lookup account assets
-  server.tool(
+  server.registerTool(
     'indexer_lookup_account_assets',
-    'Get account assets',
-    { 
-      address: z.string().describe('Account address'),
-      limit: z.number().int().optional().describe('Maximum number of assets to return'),
-      assetId: z.number().int().optional().describe('Filter by asset ID'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
-      pageToken: z.string().optional().describe('Pagination token for paginated results')
+    {
+      description: 'Get account assets',
+      inputSchema: {
+        address: z.string().describe('Account address'),
+        limit: z.number().int().optional().describe('Maximum number of assets to return'),
+        assetId: z.number().int().optional().describe('Filter by asset ID'),
+        nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: accountAssetsResourceUri },
+        'ui/resourceUri': accountAssetsResourceUri,
+      },
     },
     async ({ address, limit, assetId, nextToken, pageToken }) => {
-      
+
       if (!env.ALGORAND_INDEXER) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand indexer URL not configured'
           }]
         };
       }
-      
+
       try {
         // Create indexer client
         const indexerClient = createIndexerClient(env.ALGORAND_INDEXER);
         if (!indexerClient) {
           throw new Error('Failed to create Algorand indexer client');
         }
-        
+
         // Setup lookup with parameters
         let search = indexerClient.lookupAccountAssets(String(address));
-        
+
         if (limit) {
           search = search.limit(Number(limit));
         }
@@ -106,18 +130,40 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
         if (nextToken) {
           search = search.nextToken(String(nextToken));
         }
-        
+
         // Execute lookup
         const response = await search.do();
-        
-        // Format response to only return the assets array
-        return ResponseProcessor.processResponse({
-          assets: response.assets || []
-        }, pageToken);
+        const assetsList = (response.assets || []).map((a: any) => ({
+          assetId: Number(a.assetId ?? a['asset-id'] ?? 0),
+          amount: Number(a.amount ?? 0),
+          isFrozen: Boolean(a.isFrozen ?? a['is-frozen'] ?? false),
+          deleted: Boolean(a.deleted ?? false),
+          optedInAtRound: Number(a.optedInAtRound ?? a['opted-in-at-round'] ?? 0),
+        }));
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse({ assets: assetsList }, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ address, assetCount: assetsList.length });
+        } catch {
+          textContent = JSON.stringify({ address, assetCount: assetsList.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: {
+            accountAssets: {
+              address,
+              assets: assetsList,
+              totalAssets: assetsList.length,
+              nextToken: response.nextToken || null,
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error looking up account assets: ${error.message || 'Unknown error'}`
           }]
         };
@@ -209,39 +255,45 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
   // );
   
   // Search for accounts
-  server.tool(
+  server.registerTool(
     'indexer_search_for_accounts',
-    'Search for accounts with various criteria',
     {
-      limit: z.number().int().optional().describe('Maximum number of accounts to return'),
-      assetId: z.number().int().optional().describe('Filter by asset ID'),
-      applicationId: z.number().int().optional().describe('Filter by application ID'),
-      currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
-      currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
-      pageToken: z.string().optional().describe('Pagination token for paginated results')
+      description: 'Search for accounts with various criteria',
+      inputSchema: {
+        limit: z.number().int().optional().describe('Maximum number of accounts to return'),
+        assetId: z.number().int().optional().describe('Filter by asset ID'),
+        applicationId: z.number().int().optional().describe('Filter by application ID'),
+        currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
+        currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
+        nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: accountSearchResourceUri },
+        'ui/resourceUri': accountSearchResourceUri,
+      },
     },
     async ({ limit, assetId, applicationId, currencyGreaterThan, currencyLessThan, nextToken, pageToken }) => {
-      
+
       if (!env.ALGORAND_INDEXER) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand indexer URL not configured'
           }]
         };
       }
-      
+
       try {
         // Create indexer client
         const indexerClient = createIndexerClient(env.ALGORAND_INDEXER);
         if (!indexerClient) {
           throw new Error('Failed to create Algorand indexer client');
         }
-        
+
         // Setup search with parameters
         let search = indexerClient.searchAccounts();
-        
+
         if (limit) {
           search = search.limit(Number(limit));
         }
@@ -260,18 +312,43 @@ export function registerIndexerAccountTools(server: McpServer,env: Env): void {
         if (nextToken) {
           search = search.nextToken(String(nextToken));
         }
-        
+
         // Execute search
         const response = await search.do();
-        
-        // Format response to only return the accounts array
-        return ResponseProcessor.processResponse({
-          accounts: response.accounts || []
-        }, pageToken);
+        const accountsList = (response.accounts || []).map((a: any) => ({
+          address: a.address,
+          amount: Number(a.amount ?? 0),
+          totalAssetsOptedIn: Number(a.totalAssetsOptedIn ?? a['total-assets-opted-in'] ?? 0),
+          totalCreatedAssets: Number(a.totalCreatedAssets ?? a['total-created-assets'] ?? 0),
+          totalCreatedApps: Number(a.totalCreatedApps ?? a['total-created-apps'] ?? 0),
+          totalAppsOptedIn: Number(a.totalAppsOptedIn ?? a['total-apps-opted-in'] ?? 0),
+          status: a.status || 'Offline',
+          authAddr: a.authAddr ?? a['auth-addr'] ?? undefined,
+        }));
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse({ accounts: accountsList }, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ accountCount: accountsList.length });
+        } catch {
+          textContent = JSON.stringify({ accountCount: accountsList.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: {
+            accountSearch: {
+              accounts: accountsList,
+              totalAccounts: accountsList.length,
+              nextToken: response.nextToken || null,
+              filters: { assetId, applicationId, currencyGreaterThan, currencyLessThan },
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error searching accounts: ${error.message || 'Unknown error'}`
           }]
         };

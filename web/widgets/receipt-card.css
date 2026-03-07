@@ -1,0 +1,318 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: transparent;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+/* Main card */
+.rc-card {
+  background: var(--color-background-primary, #ffffff);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: var(--border-radius-lg, 16px);
+  padding: 0;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+
+/* Header */
+.rc-header {
+  background: linear-gradient(135deg, #047857, #059669);
+  padding: 20px 24px;
+  color: white;
+}
+
+.rc-header-title {
+  font-size: var(--font-heading-md-size, 18px);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.rc-header-timestamp {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+/* Body */
+.rc-body {
+  padding: 24px;
+}
+
+/* Dashed separator */
+.rc-separator {
+  border: none;
+  border-top: 2px dashed var(--color-border-primary, #cbd5e1);
+  margin: 16px 0;
+}
+
+/* Address rows */
+.rc-address-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.rc-address-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--color-background-secondary, #f8fafc);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+}
+
+.rc-address-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.rc-address-value {
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+  letter-spacing: 0.3px;
+  flex: 1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-copy-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  color: var(--color-text-secondary, #64748b);
+  font-family: inherit;
+  padding: 0;
+}
+
+.rc-copy-inline:hover {
+  background: var(--color-background-tertiary, #e2e8f0);
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.rc-copy-inline:active {
+  transform: scale(0.93);
+}
+
+.rc-copy-inline.copied {
+  color: #059669;
+  border-color: #059669;
+}
+
+/* Arrow icon between addresses */
+.rc-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #059669;
+  flex-shrink: 0;
+}
+
+/* Amount section */
+.rc-amount-section {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.rc-amount-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+.rc-amount-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary, #1a1a2e);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  letter-spacing: -0.5px;
+}
+
+.rc-amount-asset {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  margin-top: 2px;
+}
+
+/* Detail rows (txId, note) */
+.rc-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-primary, rgba(0, 0, 0, 0.06));
+}
+
+.rc-detail-row:last-child {
+  border-bottom: none;
+}
+
+.rc-detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #64748b);
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.rc-detail-value {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+  text-align: right;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-detail-value.rc-mono {
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  letter-spacing: 0.3px;
+}
+
+.rc-note-value {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-secondary, #64748b);
+  font-style: italic;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+  text-align: right;
+  flex: 1;
+}
+
+/* View receipt button */
+.rc-view-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #047857, #059669);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  text-align: center;
+  text-decoration: none;
+  margin-top: 8px;
+}
+
+.rc-view-btn:hover {
+  filter: brightness(1.1);
+}
+
+.rc-view-btn:active {
+  transform: scale(0.98);
+}
+
+/* Loading state */
+.rc-card.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 16px;
+  padding: 24px;
+}
+
+.rc-loading-pulse {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #047857, #059669);
+  animation: rc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes rc-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.rc-loading-text {
+  font-size: 14px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* Error state */
+.rc-card.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  gap: 12px;
+  padding: 24px;
+}
+
+.rc-error-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fecaca;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.rc-error-text {
+  font-size: 14px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+/* Dark mode */
+[data-theme="dark"] .rc-card {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="dark"] .rc-error-icon {
+  background: rgba(220, 38, 38, 0.2);
+}
+
+[data-theme="dark"] .rc-separator {
+  border-top-color: var(--color-border-primary, #334155);
+}

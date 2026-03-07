@@ -12,4 +12,4 @@ export * from './apiManager';
 // export * from './knowledgeManager';
 export * from './walletManager';
 export * from './ap2Manager';
-export * from './tinymanManager';
+// export * from './tinymanManager';

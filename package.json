@@ -1,6 +1,6 @@
 {
 	"name": "algorand-remote-mcp-lite",
-	"version": "1.8.0",
+	"version": "1.9.0",
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy --minify",
@@ -10,7 +10,7 @@
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"type-check": "tsc --noEmit",
-		"build:ui": "INPUT=widgets/wallet-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/nfd-card.html vite build --config vite.widgets.config.ts",
+		"build:ui": "INPUT=widgets/wallet-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/nfd-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/swap-quote-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/asset-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/txn-history.html vite build --config vite.widgets.config.ts && INPUT=widgets/account-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/chain-weather.html vite build --config vite.widgets.config.ts && INPUT=widgets/asset-portfolio.html vite build --config vite.widgets.config.ts && INPUT=widgets/asset-search.html vite build --config vite.widgets.config.ts && INPUT=widgets/qr-code.html vite build --config vite.widgets.config.ts && INPUT=widgets/receipt-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/mandate-card.html vite build --config vite.widgets.config.ts && INPUT=widgets/account-assets.html vite build --config vite.widgets.config.ts && INPUT=widgets/account-search.html vite build --config vite.widgets.config.ts && INPUT=widgets/asset-search-indexer.html vite build --config vite.widgets.config.ts && INPUT=widgets/asset-holders.html vite build --config vite.widgets.config.ts && INPUT=widgets/indexer-search.html vite build --config vite.widgets.config.ts && INPUT=widgets/nfd-list.html vite build --config vite.widgets.config.ts && INPUT=widgets/txn-detail.html vite build --config vite.widgets.config.ts",
 		"build": "npm run build:ui && wrangler deploy --dry-run --outdir=dist",
 		"test": "vitest run",
 		"test:watch": "vitest"

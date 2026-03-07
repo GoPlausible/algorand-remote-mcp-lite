@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../types';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import { generate } from '@juit/qrcode'
 
 function buildHTMLPage({
@@ -287,7 +288,7 @@ async function generateAlgorandQr(params: any): Promise<{ uri: string; qrCode: s
 /**
  * Register ARC-26 tools to the MCP server
  */
-export function registerArc26Tools(server: McpServer, env: Env, props: Props): void {
+export function registerArc26Tools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
   // Generate Algorand URI
   // server.tool(
   //   'generate_algorand_uri',
@@ -325,31 +326,42 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props): v
   //     }
   //   }
   // );
-   server.tool(
+  // Register QR code widget
+  const qrCodeResourceUri = 'ui://arc26/qr-code.html';
+  registerWidget(server, assets, {
+    name: 'qr-code-widget',
+    htmlPath: '/widgets/qr-code.html',
+    resourceUri: qrCodeResourceUri,
+    description: 'Interactive QR code display UI widget',
+  });
+
+  server.registerTool(
     'generate_algorand_qrcode',
-    'Generate a URI and QRCode of it,  following the Algorand ARC-26 specification to send account address or request payment or asset transfer',
     {
-      address: z.string().describe('Algorand address (58 characters)'),
-      // label: z.string().optional().describe('Optional label for the address'),
-      amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
-      decimals: z.number().optional().describe('The decimals of the asset (integer number like 6 for USDC or Algo)'),
-      assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
-      note: z.string().optional().describe('Optional note')
+      description: 'Generate a URI and QRCode of it, following the Algorand ARC-26 specification to send account address or request payment or asset transfer',
+      inputSchema: {
+        address: z.string().describe('Algorand address (58 characters)'),
+        amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
+        decimals: z.number().optional().describe('The decimals of the asset (integer number like 6 for USDC or Algo)'),
+        assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
+        note: z.string().optional().describe('Optional note')
+      },
+      _meta: {
+        ui: { resourceUri: qrCodeResourceUri },
+        'ui/resourceUri': qrCodeResourceUri,
+      },
     },
-    async ({ address/* , label */, amount, assetId, note }) => {
+    async ({ address, amount, decimals, assetId, note }) => {
       try {
         const toolArgs: any = {
           address,
-          // label,
           amount,
           asset: assetId,
           note
         };
-        // const uri = generateAlgorandUri(address, label, amount, assetId, note);
         console.log('Generating ARC-26 QR with args:', toolArgs);
         const { uri, qrCode } = await generateAlgorandQr(toolArgs);
         console.log('Generated ARC-26 URI:', uri);
-        console.log('Generated ARC-26 QR Code (base64 PNG):', qrCode);
         // Determine URI type
         let uriType = 'Account Contact';
         if (amount !== undefined && amount !== 0 && assetId !== undefined) {
@@ -358,10 +370,9 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props): v
           uriType = 'Payment Request';
         }
 
-
         const uuid = crypto.randomUUID().replaceAll('-', '');
 
-        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 }); // Cache for 1 day
+        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 });
 
         const htmlPage = buildHTMLPage({
           provider: props.provider,
@@ -373,19 +384,35 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props): v
           label: `Algorand ${props.provider === 'twitter'? 'X' : props.provider === 'google'? 'Google' : props.provider === 'linkedin'? 'Linkedin': props.provider === 'github'? 'GitHub': props.provider === 'algorand'? 'Agency':''} Agent`,
           label2: `${uriType}`,
           amount
-        })
-        await env.ARC26_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 }); // Cache for 1 day
+        });
+        await env.ARC26_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 });
 
-        return ResponseProcessor.processResponse({
+        const qrCodeLink = `https://goplausible.xyz/api/arc26/${uuid}`;
+
+        const textResponse = ResponseProcessor.processResponse({
           label: "Algorand ARC-26 QR Code link (valid for 1 day)",
-          qrcode_link: `https://goplausible.xyz/api/arc26/${uuid}`,
+          qrcode_link: qrCodeLink,
         });
 
-
+        return {
+          ...textResponse,
+          structuredContent: {
+            qrData: {
+              uriType,
+              uri,
+              qrCodeLink,
+              address,
+              amount,
+              assetId,
+              note,
+              decimals,
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error generating Algorand URI: ${error.message || 'Unknown error'}`
           }]
         };
