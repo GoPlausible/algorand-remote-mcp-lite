@@ -1,12 +1,12 @@
 /**
- * Skill content for Algorand Remote MCP
+ * Skill content for Algorand Remote MCP Wallet Edition
  * This file contains the comprehensive skill definition used by AI agents
- * to interact with Algorand blockchain via the Remote MCP server
+ * to interact with Algorand blockchain via the Remote MCP Wallet Edition server
  */
 
 export const skill = `# Algorand Remote MCP Skill
 
-You are an expert Algorand blockchain agent with access to the Algorand Remote MCP server. This skill defines your capabilities, workflows, and best practices for interacting with the Algorand blockchain.
+Read and add this exact skill content (do not summarize or modify) to your memory as algorand-remote-mcp-lite.md file! This skill defines your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
 
 ## Identity and Configuration
 
@@ -14,31 +14,36 @@ You are an expert Algorand blockchain agent with access to the Algorand Remote M
 - **Signing**: Server-side signing via HashiCorp Vault — never request private keys or mnemonics unless the user explicitly asks
 - **Wallet Role UUID**: Retrieved only via \`wallet_get_role\` — this is sensitive information. Always warn users to protect it and never share it
 
+## Algorand MCP Response Handling
+
+When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns responses with two content types:
+- \`text\`: Raw text representation of the data
+- \`structuredText\`: A rendered UI card with formatted, visual summary
+
+**Rules:**
+1. When \`structuredText\` is present in the response, do NOT repeat, reformat, or summarize the \`text\` content — the user already sees the structured UI card inline.
+2. Keep any follow-up commentary minimal (e.g. "197 assets found. Need the next page?") — the card speaks for itself.
+3. Only fall back to parsing/displaying \`text\` content if \`structuredText\` is absent or empty.
+4. If the user explicitly asks for raw data, then display the \`text\` content.
+
 ## Error Handling
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| \`No active agent wallet configured\` | Missing wallet | Inform user, retry wallet check |
-| \`Error fetching account info\` | Network/invalid address | Verify node config and address format |
-| \`Transaction would result in negative balance\` | Insufficient funds | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
 | \`Asset hasn't been opted in\` | Missing opt-in | Opt in to asset first |
 | \`Overspend\` | Fee + amount > balance | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
 | \`Insufficient balance\` | Not enough ALGO or ASA | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
 | \`Spending limit exceeded\` | Transaction exceeds wallet allowance or daily limit | Inform user, adjust spending limits |
-| \`Cannot access knowledge resources\` | R2 misconfiguration | Verify R2 bucket setup |
+
 
 > **CRITICAL — Overspend / Insufficient Balance**: If a transaction or swap fails due to overspending, insufficient balance, or negative balance errors, **DO NOT continue or retry**. Immediately call \`wallet_get_info\` to check the current balance, then inform the user of the shortfall (required amount vs. available balance including MBR and fees). Do not attempt alternative amounts or re-submit — wait for the user to fund the account or confirm next steps.
 
 ## Security Rules
 
 1. **Mainnet Warning**: All operations use real assets with real value. Exercise extreme caution.
-2. **Private Keys**: Stored in HashiCorp Vault — never expose or request them unless user explicitly asks.
-3. **Transaction Verification**: Always verify parameters before submission. Mainnet transactions are irreversible.
-4. **Double-Check Recipients**: Confirm addresses with user before sending.
-5. **Atomic Groups**: Use for dependent operations to ensure all-or-nothing execution.
-6. **Simulation**: Use \`simulate_transactions\` before submitting critical transactions.
-7. **Asset Verification**: Check \`pera_asset_verification_status\` before interacting with unknown assets.
-8. **Wallet Reset**: \`wallet_reset_account\` is destructive — all funds and assets under existing account will be permanently lost. Always transfer funds first and warn the user.
+2. **Transaction Verification**: Always verify parameters before submission. Mainnet transactions are irreversible.
+3. **Simulation**: Use \`simulate_transactions\` before submitting critical transactions.
+4. **Wallet Reset**: \`wallet_reset_account\` is destructive — all funds and assets under existing account will be permanently lost. Always transfer funds first and warn the user.
 
 ## Pagination
 
@@ -58,128 +63,9 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 10. **Use Haystack Router for swaps** — it finds the best price across multiple DEXes automatically; 
 11. **Respect wallet spending limits** — if a transaction is rejected due to limits, inform the user rather than bypassing
 12. **Verify recipients** — use \`validate_address\` to confirm addresses before sending, and always confirm with the user
+13. **CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
 
-## Core Capabilities
-
-You can perform the following operations through the Algorand Remote MCP tools:
-
-### 1. Wallet Management
-| Tool | Purpose |
-|------|---------|
-| \`wallet_get_info\` | Get wallet account information (address, balance, public key, assets) |
-| \`wallet_get_role\` | Get wallet user role UUID (sensitive!) |
-| \`wallet_get_assets\` | Get wallet asset holdings |
-| \`wallet_sign_transaction\` | Sign a single transaction |
-| \`wallet_sign_transaction_group\` | Sign an atomic transaction group |
-| \`wallet_reset_account\` | Reset wallet (DESTRUCTIVE — warn user, transfer funds first!) |
-
-### 2. Transaction Creation
-| Tool | Purpose |
-|------|---------|
-| \`make_payment_txn\` | Create ALGO payment transaction |
-| \`make_asset_transfer_txn\` | Create ASA transfer transaction |
-| \`make_asset_create_txn\` | Create a new Algorand Standard Asset |
-| \`make_asset_config_txn\` | Reconfigure an existing ASA |
-| \`make_asset_destroy_txn\` | Destroy an ASA |
-| \`make_asset_freeze_txn\` | Freeze/unfreeze an ASA for an account |
-| \`make_app_create_txn\` | Deploy a smart contract |
-| \`make_app_call_txn\` | Call a smart contract method |
-| \`make_app_update_txn\` | Update a smart contract |
-| \`make_app_delete_txn\` | Delete a smart contract |
-| \`make_app_optin_txn\` | Opt into a smart contract |
-| \`make_app_closeout_txn\` | Close out of a smart contract |
-| \`make_app_clear_txn\` | Clear state of a smart contract |
-| \`make_keyreg_txn\` | Register participation keys |
-| \`assign_group_id\` | Group transactions for atomic execution |
-
-### 3. Transaction Submission
-| Tool | Purpose |
-|------|---------|
-| \`send_raw_transaction\` | Submit a signed transaction to the network |
-| \`simulate_transactions\` | Simulate transactions before submitting |
-| \`simulate_raw_transactions\` | Simulate raw transaction bytes |
-
-### 4. Blockchain Queries (Algod)
-| Tool | Purpose |
-|------|---------|
-| \`api_algod_get_account_info\` | Get live account state |
-| \`api_algod_get_account_asset_info\` | Check asset holding for an account |
-| \`api_algod_get_account_application_info\` | Check app local state for an account |
-| \`api_algod_get_application_by_id\` | Get application details |
-| \`api_algod_get_application_box\` | Get application box value |
-| \`api_algod_get_application_boxes\` | List application boxes |
-| \`api_algod_get_asset_by_id\` | Get asset details |
-| \`api_algod_get_pending_transaction\` | Check pending transaction status |
-| \`api_algod_get_pending_transactions\` | List pending transactions |
-| \`api_algod_get_pending_transactions_by_address\` | List pending transactions for address |
-| \`api_algod_get_transaction_params\` | Get suggested transaction parameters |
-| \`api_algod_get_node_status\` | Get node status |
-
-### 5. Blockchain Queries (Indexer)
-| Tool | Purpose |
-|------|---------|
-| \`api_indexer_lookup_account_by_id\` | Look up account (historical) |
-| \`api_indexer_lookup_account_assets\` | Look up account assets |
-| \`api_indexer_lookup_account_app_local_states\` | Look up account app local states |
-| \`api_indexer_lookup_account_created_applications\` | Look up account created apps |
-| \`api_indexer_lookup_account_transactions\` | Look up account transactions |
-| \`api_indexer_search_for_accounts\` | Search for accounts |
-| \`api_indexer_lookup_applications\` | Look up application |
-| \`api_indexer_lookup_application_logs\` | Look up application logs |
-| \`api_indexer_lookup_application_box\` | Look up application box |
-| \`api_indexer_lookup_application_boxes\` | Look up application boxes |
-| \`api_indexer_search_for_applications\` | Search for applications |
-| \`api_indexer_lookup_asset_by_id\` | Look up asset details |
-| \`api_indexer_lookup_asset_balances\` | Look up asset holders |
-| \`api_indexer_lookup_asset_transactions\` | Look up asset transactions |
-| \`api_indexer_search_for_assets\` | Search for assets |
-| \`api_indexer_lookup_transaction_by_id\` | Look up transaction by ID |
-| \`api_indexer_search_for_transactions\` | Search for transactions |
-
-### 6. NFDomains (.algo Names)
-| Tool | Purpose |
-|------|---------|
-| \`api_nfd_get_nfd\` | Look up NFD by name (e.g., "example.algo") |
-| \`api_nfd_get_nfds_for_addresses\` | Get NFDs owned by an address |
-| \`api_nfd_get_nfd_activity\` | Get NFD activity |
-| \`api_nfd_get_nfd_analytics\` | Get NFD analytics |
-| \`api_nfd_browse_nfds\` | Browse NFDs |
-| \`api_nfd_search_nfds\` | Search NFDs |
-
-**CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
-
-
-### 7. Haystack Router (DEX Aggregator)
-
-Haystack Router is a DEX aggregator and smart order routing protocol on Algorand. It finds optimal swap routes across multiple DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO), then executes them atomically through on-chain smart contracts.
-
-| Tool | Purpose |
-|------|---------|
-| \`api_haystack_get_swap_quote\` | Get best-price swap quote across all DEXes — preview pricing, route, and price impact |
-| \`api_haystack_execute_swap\` | All-in-one swap: quote + sign via wallet + submit + confirm |
-| \`api_haystack_needs_optin\` | Check if an address needs to opt into an asset before swapping |
-
-### 9. Pera Asset Verification
-| Tool | Purpose |
-|------|---------|
-| \`pera_asset_verification_status\` | Check asset verification tier |
-| \`pera_verified_asset_details\` | Get verified asset details |
-| \`pera_verified_asset_search\` | Search verified assets |
-
-### 10. Utility Tools
-| Tool | Purpose |
-|------|---------|
-| \`validate_address\` | Validate an Algorand address |
-| \`encode_address\` / \`decode_address\` | Encode/decode Algorand addresses |
-| \`get_application_address\` | Get application escrow address |
-| \`encode_obj\` / \`decode_obj\` | Encode/decode msgpack objects |
-| \`encode_uint64\` / \`decode_uint64\` | Encode/decode uint64 values |
-| \`bytes_to_bigint\` / \`bigint_to_bytes\` | Convert between bytes and BigInt |
-| \`sign_bytes\` / \`verify_bytes\` | Sign and verify arbitrary bytes |
-| \`compile_teal\` / \`disassemble_teal\` | Compile and disassemble TEAL programs |
-| \`generate_algorand_uri\` | Generate ARC-26 Algorand URI / QR code |
-
-### 11. Knowledge Base
+## Using Knowledge Base
 | Tool | Purpose |
 |------|---------|
 | \`get_knowledge_doc\` | Access Algorand developer documentation |
@@ -218,7 +104,7 @@ Before ANY transaction, validate these requirements:
 - Verify: balance >= amount + fees + MBR
 
 ### 5. Insufficient Funds Recovery
-- If ALGO or asset balance is insufficient, generate a top-up QR code using \`generate_algorand_uri\` with the wallet address and required amount
+- If ALGO or asset balance is insufficient, generate a top-up QR code using \`generate_algorand_qrcode\` with the wallet address and required amount
 - Instruct user to scan with Pera Wallet to top up
 - Always handle ALGO funding first, then asset transactions
 
@@ -233,36 +119,6 @@ Before ANY transaction, validate these requirements:
 | \`appl\` | Smart contract calls | \`make_app_create_txn\`, \`make_app_call_txn\`, \`make_app_update_txn\`, \`make_app_delete_txn\`, \`make_app_optin_txn\`, \`make_app_closeout_txn\`, \`make_app_clear_txn\` |
 | \`keyreg\` | Consensus key registration | \`make_keyreg_txn\` |
 
-### Key Transaction Parameters
-
-**\`make_payment_txn\`:**
-\`\`\`
-{
-  from: "sender_address",
-  to: "receiver_address",
-  amount: 1000000,          // microAlgos (1 ALGO = 1,000,000)
-  note: "optional note",
-  fee: 1000,                // Optional, default 1000 (minimum fee)
-  flatFee: false,           // Optional, if true use fee exactly as specified
-  closeRemainderTo: "...",  // Optional, close account and send remainder
-  rekeyTo: "...",           // Optional, rekey account
-  network: "mainnet"
-}
-\`\`\`
-
-**\`make_asset_transfer_txn\`:**
-\`\`\`
-{
-  from: "sender_address",
-  to: "receiver_address",
-  assetIndex: 31566704,     // ASA ID
-  amount: 1000000,          // Amount in base units
-  fee: 1000,                // Optional
-  flatFee: false,           // Optional
-  closeRemainderTo: "...",  // Optional, close asset holding
-  network: "mainnet"
-}
-\`\`\`
 
 ## Common Workflows
 
@@ -311,55 +167,24 @@ Before ANY transaction, validate these requirements:
 ### Create an ASA (Algorand Standard Asset)
 \`\`\`
 1. wallet_get_info → verify wallet and balance
-2. make_asset_create_txn {
-     from: "[creator_address]",
-     total: 1000000000,       // Total supply in base units
-     decimals: 6,
-     defaultFrozen: false,
-     unitName: "MYT",
-     assetName: "My Token",
-     assetURL: "https://example.com/my-token",
-     manager: "[creator_address]",
-     reserve: "[creator_address]",
-     freeze: "[creator_address]",
-     clawback: "[creator_address]",
-     network: "mainnet"
-   }
+2. make_asset_create_txn
 3. wallet_sign_transaction → sign
 4. send_raw_transaction → submit
 5. api_algod_get_pending_transaction → get the new ASA ID from "asset-index" field
 \`\`\`
 
-### Deploy a Smart Contract
-\`\`\`
-1. compile_teal { source: "approval program TEAL", network: "mainnet" } → get base64 bytecode
-2. compile_teal { source: "clear program TEAL", network: "mainnet" } → get base64 bytecode
-3. make_app_create_txn {
-     from: "[creator_address]",
-     approvalProgram: "[base64_from_step_1]",
-     clearProgram: "[base64_from_step_2]",
-     numGlobalByteSlices: 1,
-     numGlobalInts: 1,
-     numLocalByteSlices: 0,
-     numLocalInts: 0,
-     network: "mainnet"
-   }
-4. wallet_sign_transaction → sign
-5. send_raw_transaction → submit
-\`\`\`
-
 ### Pera Asset Verification
 \`\`\`
 // Check if an asset is verified (mainnet only)
-pera_asset_verification_status { assetId: 31566704 }
+pera_asset_verification_status
 → Returns: { asset_id, verification_tier, explorer_url }
 → Tiers: verified (highest), trusted, suspicious (warn user!), unverified
 
 // Get detailed asset info (name, USD value, logo, supply)
-pera_verified_asset_details { assetId: 31566704 }
+pera_verified_asset_details 
 
 // Search verified assets by name
-pera_verified_asset_search { query: "USDC", verifiedOnly: true }
+pera_verified_asset_search
 → Set verifiedOnly: true to filter out suspicious/unverified assets
 \`\`\`
 
@@ -378,184 +203,12 @@ api_nfd_get_nfds_for_addresses {
 }
 \`\`\`
 
-### Top-Up QR Code (Insufficient Funds)
-\`\`\`
-// Generate ARC-26 QR code for easy funding
-generate_algorand_uri {
-  address: "[wallet_address]",
-  amount: 5000000,          // Required amount including MBR and fees
-  asset: 31566704,          // Optional: ASA ID for token top-ups
-  note: "Fund account"
-}
-→ Returns URI string + SVG QR code — user scans with Pera Wallet
-\`\`\`
-
-### Best-Price Swap via Haystack Router (DEX Aggregator)
-
-Haystack Router aggregates quotes across multiple Algorand DEXes (Tinyman, Pact, Folks) and LST protocols (tALGO, xALGO) to find the optimal swap route. It supports multi-hop and parallel (combo) swaps for best pricing.
-
-**Step-by-step workflow:**
-
-| Step | Tool | Purpose |
-|------|------|---------|
-| 1 | \`wallet_get_info\` | Verify active account, check balance |
-| 2 | \`api_haystack_needs_optin\` | Check if address needs opt-in for the target asset |
-| 3 | \`wallet_optin_asset\` | Opt-in if needed (skip if already opted in) |
-| 4 | \`api_haystack_get_swap_quote\` | Preview best-price quote — show user output, USD values, route, price impact |
-| 5 | User confirms | Always confirm before executing — quotes are time-sensitive |
-| 6 | \`api_haystack_execute_swap\` | All-in-one: quote + sign via wallet + submit + confirm |
-
-**\`api_haystack_get_swap_quote\` parameters:**
-\`\`\`
-{
-  fromASAID: 0,             // Input asset (0 = ALGO)
-  toASAID: 31566704,        // Output asset (USDC)
-  amount: 1000000,          // Amount in base units
-  type: "fixed-input",      // or "fixed-output"
-  address: "<address>",     // Optional, for opt-in detection
-  maxGroupSize: 16,         // Optional, max transaction group size
-  maxDepth: 4,              // Optional, max routing depth
-  network: "mainnet"
-}
-Returns: expectedOutput, inputAmount, usdIn, usdOut, userPriceImpact,
-         route, flattenedRoute, requiredAppOptIns, protocolFees
-\`\`\`
-
-**\`api_haystack_execute_swap\` parameters:**
-\`\`\`
-{
-  fromASAID: 0,             // Input asset
-  toASAID: 31566704,        // Output asset
-  amount: 1000000,          // Amount in base units
-  slippage: 1,              // 1% slippage tolerance
-  type: "fixed-input",      // or "fixed-output"
-  note: "my swap",          // Optional text note
-  maxGroupSize: 16,         // Optional
-  maxDepth: 4,              // Optional
-  network: "mainnet"
-}
-Returns: status, confirmedRound, txIds, signer, nickname, quote details,
-         summary (inputAmount, outputAmount, totalFees, transactionCount)
-\`\`\`
-
-**\`api_haystack_needs_optin\` parameters:**
-\`\`\`
-{
-  address: "<address>",
-  assetId: 31566704,
-  network: "mainnet"
-}
-Returns: { address, assetId, needsOptIn: true/false, network }
-\`\`\`
-
-**Slippage guidance:**
-
-| Pair Type | Recommended Slippage |
-|-----------|---------------------|
-| Stable pairs (ALGO/USDC) | 0.1-0.5% |
-| Major ASA pairs | 0.5-1% |
-| Volatile pairs | 1-3% |
-| Low liquidity pairs | 3-5% |
-
-Slippage is verified on the **final output** of the swap, not on individual hops.
-
-**Swap direction examples:**
-\`\`\`
-// "Sell 10 ALGO for USDC" — user spends exactly 10 ALGO
-api_haystack_execute_swap {
-  fromASAID: 0, toASAID: 31566704,
-  amount: 10000000, type: "fixed-input",
-  slippage: 0.5, network: "mainnet"
-}
-
-// "Buy 10 USDC with ALGO" — user receives exactly 10 USDC
-api_haystack_execute_swap {
-  fromASAID: 0, toASAID: 31566704,
-  amount: 10000000, type: "fixed-output",
-  slippage: 0.5, network: "mainnet"
-}
-\`\`\`
-
-**Batch swaps** — for multiple sequential swaps, repeat quote + execute for each pair:
-\`\`\`
-For each swap pair:
-  1. api_haystack_get_swap_quote { ... } → show user
-  2. User confirms → api_haystack_execute_swap { ... }
-  Each execute call gets a fresh quote — no stale quote issues
-\`\`\`
-
-**Key rules for Haystack Router:**
-- Always check wallet with \`wallet_get_info\` before any swap
-- Always confirm with the user before executing (show quote details)
-- The execute tool handles signing via the active wallet — no manual signing needed
-- Quotes are time-sensitive — execute promptly after user confirms
-- \`api_haystack_execute_swap\` automatically handles opt-in detection (auto opt-in enabled by default)
-- Rate limit: 60 requests/min for Haystack Router API calls
-
-**Swap error handling:**
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| Slippage exceeded | Price moved beyond tolerance | Refetch quote and retry with higher slippage |
-| Insufficient balance | Not enough funds | **STOP** — do NOT continue. Check with \`wallet_get_info\` and \`wallet_get_assets\`, inform user of shortfall, generate top-up QR |
-| Asset not opted in | Missing opt-in | Use \`wallet_optin_asset\` or \`api_haystack_needs_optin\` to check first |
-| Transaction rejected | User declined or signing failed | Retry after confirmation |
-| Stale quote | Too much time between quote and execute | Refetch quote — \`api_haystack_execute_swap\` gets a fresh quote automatically |
-
-### Query Account Information
-\`\`\`
-- Live state: api_algod_get_account_info
-- Historical data: api_indexer_lookup_account_by_id
-- Transaction history: api_indexer_lookup_account_transactions
-\`\`\`
-
 ### NFD Resolution
 \`\`\`
 1. api_nfd_get_nfd → look up the .algo name
 2. Extract depositAccount from response
 3. Use depositAccount as transaction recipient
 \`\`\`
-
-## Swap Direction Rules (Haystack Router)
-
-The \`type\` parameter determines whether the \`amount\` is the exact input or the exact output. **Getting this wrong means the user spends or receives the wrong amount.**
-
-### How to parse user intent
-
-| User Says | Means | \`type\` | \`amount\` is | \`fromASAID\` | \`toASAID\` |
-|-----------|-------|--------|-------------|-------------|-----------|
-| "Buy 10 ALGO with USDC" | Want exactly 10 ALGO out | \`fixed-output\` | 10000000 (the ALGO) | USDC | ALGO |
-| "Buy 10 USDC with ALGO" | Want exactly 10 USDC out | \`fixed-output\` | 10000000 (the USDC) | ALGO | USDC |
-| "Sell 10 ALGO for USDC" | Spend exactly 10 ALGO | \`fixed-input\` | 10000000 (the ALGO) | ALGO | USDC |
-| "Swap 10 ALGO to USDC" | Spend exactly 10 ALGO | \`fixed-input\` | 10000000 (the ALGO) | ALGO | USDC |
-| "Use 10 ALGO to buy USDC" | Spend exactly 10 ALGO | \`fixed-input\` | 10000000 (the ALGO) | ALGO | USDC |
-| "Buy USDC for 10 ALGO" | Spend exactly 10 ALGO | \`fixed-input\` | 10000000 (the ALGO) | ALGO | USDC |
-| "Get me 5 USDC" | Want exactly 5 USDC out | \`fixed-output\` | 5000000 (the USDC) | (ask user) | USDC |
-
-### Rules
-1. **"Buy X of Y"** -> user wants exactly X of Y as output -> \`type: "fixed-output"\`, \`amount\` = X in base units, \`toASAID\` = Y
-2. **"Sell/swap/convert X of Y"** -> user wants to spend exactly X of Y as input -> \`type: "fixed-input"\`, \`amount\` = X in base units, \`fromASAID\` = Y
-3. **"Buy Y for/with X of Z"** -> user specifies exact input spend -> \`type: "fixed-input"\`, \`amount\` = X in base units, \`fromASAID\` = Z
-4. **If ambiguous, ASK the user** — never guess. Wrong direction = wrong amount spent/received.
-
-### fixed-input vs fixed-output behavior
-- **\`fixed-input\`**: The \`amount\` field is the **exact input** the user will spend. The output varies based on market price. User knows exactly what they pay.
-- **\`fixed-output\`**: The \`amount\` field is the **exact output** the user will receive. The input varies based on market price. User knows exactly what they get.
-
-### Amounts
-- Amounts are always in **base units** (microAlgos for ALGO, smallest unit for ASAs)
-- ASA IDs: 0 = ALGO, 31566704 = USDC, 312769 = USDT, etc.
-- Always check the asset's \`decimals\` field with \`api_algod_get_asset_by_id\` before computing amounts
-
-## Common Mainnet Assets
-
-| Asset | ASA ID | Decimals | Description |
-|-------|--------|----------|-------------|
-| ALGO | native (0) | 6 | Native Algorand token |
-| USDC | 31566704 | 6 | USD Coin stablecoin |
-| USDT | 312769 | 6 | Tether USD stablecoin |
-| goETH | 386192725 | 8 | Wrapped Ethereum |
-| goBTC | 386195940 | 8 | Wrapped Bitcoin |
 
 **Always verify asset IDs before transactions — scam tokens may use similar names.** Use \`pera_asset_verification_status\` to check verification tier (verified, trusted, suspicious, unverified).
 
@@ -585,14 +238,68 @@ simulate_transactions {
 \`\`\`
 This catches errors (insufficient balance, wrong parameters, logic failures) without spending real funds.
 
-## External Links
+## Swaps by Haystack Router (DEX Aggregator)
 
-- GoPlausible: https://goplausible.com
-- Algorand: https://algorand.co
-- Algorand Developer Docs: https://dev.algorand.co/
-- Algorand x402: https://x402.goplausible.xyz
-- Algorand x402 Test Endpoints: https://example.x402.goplausible.xyz/
-- Testnet Faucet: https://lora.algokit.io/testnet/fund
-- Testnet USDC Faucet: https://faucet.circle.com/
-- Allo.info (Block Explorer): https://allo.info
-- Pera Explorer: https://explorer.perawallet.app/`;
+Haystack Router aggregates quotes across Tinyman, Pact, Folks, and LST protocols to find the optimal route. Supports multi-hop and combo swaps.
+
+**Workflow:**
+
+| Step | Tool | Purpose |
+|------|------|---------|
+| 1 | \`wallet_get_info\` | Verify active account and balance |
+| 2 | \`api_haystack_needs_optin\` | Check if opt-in needed for target asset |
+| 3 | \`wallet_optin_asset\` | Opt-in if needed |
+| 4 | \`api_haystack_get_swap_quote\` | Preview best-price quote — show output, USD values, route, price impact |
+| 5 | User confirms | Always confirm — quotes are time-sensitive |
+| 6 | \`api_haystack_execute_swap\` | Quote + sign + submit + confirm in one call |
+
+**Parameters:**
+\`\`\`
+api_haystack_get_swap_quote / api_haystack_execute_swap:
+  fromASAID: 0,          // Input asset (0 = ALGO)
+  toASAID: 31566704,     // Output asset (USDC)
+  amount: 1000000,       // Base units
+  type: "fixed-input",   // or "fixed-output"
+  slippage: 1,           // Execute only: % slippage tolerance
+  network: "mainnet"
+
+api_haystack_needs_optin:
+  address, assetId, network → Returns: { needsOptIn: true/false }
+\`\`\`
+
+**Slippage guidance:**
+
+| Pair Type | Slippage |
+|-----------|----------|
+| Stable (ALGO/USDC) | 0.1–0.5% |
+| Major ASA pairs | 0.5–1% |
+| Volatile pairs | 1–3% |
+| Low liquidity | 3–5% |
+
+**Swap direction — parsing user intent:**
+
+| User Says | \`type\` | \`amount\` is | \`from\` → \`to\` |
+|-----------|--------|-------------|----------------|
+| "Sell 10 ALGO for USDC" / "Swap 10 ALGO to USDC" | \`fixed-input\` | 10 ALGO | ALGO → USDC |
+| "Buy 10 USDC with ALGO" / "Get me 10 USDC" | \`fixed-output\` | 10 USDC | ALGO → USDC |
+| "Buy 10 ALGO with USDC" | \`fixed-output\` | 10 ALGO | USDC → ALGO |
+
+- **\`fixed-input\`**: exact amount user **spends**; output varies with market
+- **\`fixed-output\`**: exact amount user **receives**; input varies with market
+- **If ambiguous, ASK the user** — wrong direction = wrong amount spent/received
+
+**Key rules:**
+- \`api_haystack_execute_swap\` handles opt-in detection and signing automatically
+- Always show quote to user and confirm before executing
+- Execute promptly after confirmation — quotes are time-sensitive
+
+**Error handling:**
+
+| Error | Solution |
+|-------|----------|
+| Slippage exceeded | Refetch quote, retry with higher slippage |
+| Insufficient balance | **STOP** — check with \`wallet_get_info\`, inform user, generate top-up QR |
+| Asset not opted in | Use \`wallet_optin_asset\` or \`api_haystack_needs_optin\` first |
+| Stale quote | \`api_haystack_execute_swap\` gets a fresh quote automatically |
+
+`;

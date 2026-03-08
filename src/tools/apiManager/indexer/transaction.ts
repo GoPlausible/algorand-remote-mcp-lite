@@ -53,6 +53,16 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
     const afrz = t.assetFreezeTransaction ?? t['asset-freeze-transaction'];
     const innerRaw = t.innerTxns ?? t['inner-txns'] ?? [];
 
+    // Convert Uint8Array to base64 string (algosdk v3 decodes bytes fields)
+    function toBase64(val: any): string | undefined {
+      if (!val) return undefined;
+      if (val instanceof Uint8Array) {
+        const binaryStr = Array.from(val).reduce((acc: string, byte: number) => acc + String.fromCharCode(byte), '');
+        return btoa(binaryStr);
+      }
+      return String(val);
+    }
+
     return {
       id: t.id ?? undefined,
       type: t.txType ?? t['tx-type'] ?? 'unknown',
@@ -60,8 +70,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
       fee: Number(t.fee ?? 0),
       confirmedRound: Number(t.confirmedRound ?? t['confirmed-round'] ?? 0),
       roundTime: Number(t.roundTime ?? t['round-time'] ?? 0),
-      group: t.group ?? undefined,
-      note: t.note ?? undefined,
+      group: toBase64(t.group),
+      note: toBase64(t.note),
       paymentTransaction: pt ? {
         amount: Number(pt.amount ?? 0),
         receiver: pt.receiver,
@@ -77,13 +87,12 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
       applicationTransaction: appl ? {
         applicationId: Number(appl.applicationId ?? appl['application-id'] ?? 0),
         onCompletion: appl.onCompletion ?? appl['on-completion'] ?? 'noop',
-        applicationArgs: appl.applicationArgs ?? appl['application-args'] ?? undefined,
-        foreignApps: appl.foreignApps ?? appl['foreign-apps'] ?? undefined,
-        foreignAssets: appl.foreignAssets ?? appl['foreign-assets'] ?? undefined,
+        applicationArgs: (appl.applicationArgs ?? appl['application-args'] ?? []).map((a: any) => toBase64(a) ?? ''),
+        foreignApps: (appl.foreignApps ?? appl['foreign-apps'] ?? []).map((id: any) => Number(id)),
+        foreignAssets: (appl.foreignAssets ?? appl['foreign-assets'] ?? []).map((id: any) => Number(id)),
       } : undefined,
       assetConfigTransaction: acfg ? {
         assetId: Number(acfg.assetId ?? acfg['asset-id'] ?? 0),
-        params: acfg.params ?? undefined,
       } : undefined,
       assetFreezeTransaction: afrz ? {
         assetId: Number(afrz.assetId ?? afrz['asset-id'] ?? 0),
@@ -91,8 +100,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
         newFreezeStatus: afrz.newFreezeStatus ?? afrz['new-freeze-status'] ?? false,
       } : undefined,
       innerTxns: innerRaw.map((inner: any) => normalizeTxn(inner)),
-      createdApplicationIndex: Number(t.createdApplicationIndex ?? t['created-application-index'] ?? 0),
-      createdAssetIndex: Number(t.createdAssetIndex ?? t['created-asset-index'] ?? 0),
+      createdApplicationIndex: Number(t.createdApplicationIndex ?? t['created-application-index'] ?? 0) || undefined,
+      createdAssetIndex: Number(t.createdAssetIndex ?? t['created-asset-index'] ?? 0) || undefined,
     };
   }
 
@@ -100,9 +109,10 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
   server.registerTool(
     'indexer_lookup_transaction_by_id',
     {
-      description: 'Get transaction details from indexer with flow visualization',
+      description: 'Get transaction details or all transactions in an atomic group from the indexer with flow visualization',
       inputSchema: {
-        txid: z.string().describe('Transaction ID'),
+        txid: z.string().optional().describe('Transaction ID (required if groupId not provided)'),
+        groupId: z.string().optional().describe('Atomic group ID (base64). Returns all transactions in the group instead of a single transaction.'),
         pageToken: z.string().optional().describe('Pagination token for paginated results')
       },
       _meta: {
@@ -110,7 +120,41 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
         'ui/resourceUri': txnDetailResourceUri,
       },
     },
-    async ({ txid, pageToken }) => {
+    async ({ txid, groupId, pageToken }) => {
+
+      // Group lookup branch
+      if (groupId) {
+        if (!env.ALGORAND_INDEXER) {
+          return { content: [{ type: 'text' as const, text: 'Algorand indexer URL not configured' }] };
+        }
+        try {
+          const baseUrl = env.ALGORAND_INDEXER.replace(/\/$/, '');
+          const headers: Record<string, string> = {};
+          if (env.ALGORAND_TOKEN) headers['X-Algo-API-Token'] = env.ALGORAND_TOKEN;
+          const resp = await fetch(`${baseUrl}/v2/transactions?group-id=${encodeURIComponent(groupId)}&limit=50`, { headers });
+          if (!resp.ok) throw new Error(`Indexer returned ${resp.status}`);
+          const data = await resp.json() as { transactions?: any[] };
+          const transactions = (data.transactions || []).map(normalizeTxn);
+          const totalFee = transactions.reduce((s: number, t: any) => s + t.fee, 0);
+          const confirmedRound = transactions[0]?.confirmedRound ?? 0;
+          const roundTime = transactions[0]?.roundTime ?? 0;
+          const typeCounts: Record<string, number> = {};
+          for (const t of transactions) typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
+          return {
+            content: [{ type: 'text' as const, text: `Group ${groupId.slice(0, 12)}…: ${transactions.length} transactions in round ${confirmedRound}` }],
+            structuredContent: {
+              txnGroup: { groupId, transactions, totalFee, confirmedRound, roundTime, typeCounts },
+            },
+          };
+        } catch (error: any) {
+          return { content: [{ type: 'text' as const, text: `Error loading group: ${error.message || 'Unknown error'}` }] };
+        }
+      }
+
+      // Single-tx lookup (existing code follows)
+      if (!txid) {
+        return { content: [{ type: 'text' as const, text: 'Either txid or groupId is required' }] };
+      }
 
       if (!env.ALGORAND_INDEXER) {
         return {

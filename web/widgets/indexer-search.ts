@@ -60,7 +60,7 @@ function renderAccountsTable(results: any[]): string {
         <td class="is-cell is-mono" title="${acct.address || ""}">${addr}</td>
         <td class="is-cell is-right">${balance}</td>
         <td class="is-cell">${status}</td>
-        <td class="is-cell"><a class="allo-link" href="https://allo.info/account/${acct.address}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+        <td class="is-cell"><button class="allo-link" data-url="https://allo.info/account/${acct.address}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
   }).join("");
@@ -95,7 +95,7 @@ function renderTransactionsTable(results: any[]): string {
         <td class="is-cell">${txType}</td>
         <td class="is-cell is-mono" title="${txn.sender || ""}">${sender}</td>
         <td class="is-cell is-right">${round}</td>
-        <td class="is-cell"><a class="allo-link" href="https://allo.info/tx/${txn.id}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+        <td class="is-cell"><button class="allo-link" data-url="https://allo.info/tx/${txn.id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
   }).join("");
@@ -131,7 +131,7 @@ function renderAssetsTable(results: any[]): string {
         <td class="is-cell">${name}</td>
         <td class="is-cell">${unitName}</td>
         <td class="is-cell is-mono" title="${asset.params?.creator || ""}">${creator}</td>
-        <td class="is-cell"><a class="allo-link" href="https://allo.info/asset/${id}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+        <td class="is-cell"><button class="allo-link" data-url="https://allo.info/asset/${id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
   }).join("");
@@ -165,7 +165,7 @@ function renderApplicationsTable(results: any[]): string {
         <td class="is-cell is-mono">${id}</td>
         <td class="is-cell is-mono" title="${appEntry.params?.creator || ""}">${creator}</td>
         <td class="is-cell is-right">${globalStateCount}</td>
-        <td class="is-cell"><a class="allo-link" href="https://allo.info/application/${id}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+        <td class="is-cell"><button class="allo-link" data-url="https://allo.info/application/${id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
   }).join("");
@@ -264,6 +264,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "indexer-search-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = () => {
   root.innerHTML = renderLoading();

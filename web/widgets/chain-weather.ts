@@ -379,10 +379,10 @@ function renderWeatherCard(data: ChainWeatherData): string {
         <span class="cw-footer-label">Algorand Chain Weather</span>
         <span class="cw-footer-round">Round #${data.ledger.currentRound.toLocaleString()}</span>
       </div>
-      <a class="cw-powered-by" href="https://allo.info" target="_blank" rel="noopener">
+      <button class="cw-powered-by" data-url="https://allo.info">
         ${ALLO_SVG}
         <span>Data and stats powered by Allo.info</span>
-      </a>
+      </button>
     </div>
   `;
 }
@@ -433,6 +433,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "chain-weather-widget", version: "1.0.0" });
+
+// Handle external link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
+  if (el) {
+    const url = el.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = () => {
   root.innerHTML = renderLoading();

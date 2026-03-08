@@ -62,7 +62,7 @@ function renderAccountAssets(data: AccountAssetsData): string {
             <td class="aa-cell aa-cell-id">${String(asset.assetId)}</td>
             <td class="aa-cell aa-cell-amount">${String(asset.amount)}</td>
             <td class="aa-cell aa-cell-frozen">${frozenHtml}</td>
-            <td class="aa-cell aa-cell-allo"><a class="allo-link" href="https://allo.info/asset/${String(asset.assetId)}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+            <td class="aa-cell aa-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${String(asset.assetId)}" title="View on allo.info">${ALLO_SVG}</button></td>
           </tr>
         `;
       }).join("")
@@ -135,6 +135,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "account-assets-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;

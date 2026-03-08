@@ -96,7 +96,7 @@ function renderAccountRow(account: AccountResult, index: number): string {
       <td class="acs-cell acs-cell-balance">${formatAlgo(account.amount)} ALGO</td>
       <td class="acs-cell acs-cell-assets">${account.totalAssetsOptedIn ?? 0}</td>
       <td class="acs-cell acs-cell-status">${getStatusBadge(account.status)}</td>
-      <td class="acs-cell acs-cell-allo"><a class="allo-link" href="https://allo.info/account/${account.address}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+      <td class="acs-cell acs-cell-allo"><button class="allo-link" data-url="https://allo.info/account/${account.address}" title="View on allo.info">${ALLO_SVG}</button></td>
     </tr>
   `;
 }
@@ -181,6 +181,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "account-search-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = () => {
   root.innerHTML = renderLoading();

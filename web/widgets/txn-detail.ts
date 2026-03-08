@@ -52,8 +52,18 @@ interface Transaction {
   createdAssetIndex?: number;
 }
 
+interface TxnGroup {
+  groupId: string;
+  transactions: Transaction[];
+  totalFee: number;
+  confirmedRound: number;
+  roundTime: number;
+  typeCounts: Record<string, number>;
+}
+
 interface TxnDetailData {
-  txnDetail: { transaction: Transaction };
+  txnDetail?: { transaction: Transaction };
+  txnGroup?: TxnGroup;
 }
 
 type EntityKind = "account" | "application";
@@ -193,7 +203,7 @@ function renderDetailText(detail: string): string {
     .map((p) => {
       const m = p.match(/^ASA#(\d+)$/);
       if (m) {
-        return `<a class="td-asa-link" href="${ALLO}/asset/${esc(m[1])}" target="_blank" rel="noopener">${esc(p)}</a>`;
+        return `<button class="td-asa-link" data-url="${ALLO}/asset/${esc(m[1])}">${esc(p)}</button>`;
       }
       return esc(p);
     })
@@ -249,6 +259,56 @@ function collectEntities(txn: Transaction): Entity[] {
   }
 
   walk(txn);
+  return Array.from(seen.values());
+}
+
+function collectGroupEntities(transactions: Transaction[]): Entity[] {
+  const seen = new Map<string, Entity>();
+  let nextIdx = 1;
+
+  function add(kind: EntityKind, value: string) {
+    if (!value) return;
+    const key = `${kind}:${value}`;
+    if (!seen.has(key)) {
+      seen.set(key, {
+        kind,
+        value,
+        index: nextIdx++,
+        label: kind === "account" ? trunc(value, 4, 4) : value,
+        url:
+          kind === "account"
+            ? `${ALLO}/account/${value}`
+            : `${ALLO}/application/${value}`,
+      });
+    }
+  }
+
+  function walk(t: Transaction) {
+    add("account", t.sender);
+    if (t.type === "pay" && t.paymentTransaction) {
+      add("account", t.paymentTransaction.receiver);
+      if (t.paymentTransaction.closeRemainderTo)
+        add("account", t.paymentTransaction.closeRemainderTo);
+    }
+    if (t.type === "axfer" && t.assetTransferTransaction) {
+      const at = t.assetTransferTransaction;
+      add("account", at.receiver);
+      if (at.sender) add("account", at.sender);
+      if (at.closeTo) add("account", at.closeTo);
+    }
+    if (t.type === "appl" && t.applicationTransaction) {
+      const appId = t.applicationTransaction.applicationId;
+      if (appId && appId > 0) add("application", String(appId));
+    }
+    if (t.type === "afrz" && t.assetFreezeTransaction) {
+      add("account", t.assetFreezeTransaction.address);
+    }
+    if (t.innerTxns) {
+      for (const inner of t.innerTxns) walk(inner);
+    }
+  }
+
+  for (const txn of transactions) walk(txn);
   return Array.from(seen.values());
 }
 
@@ -353,11 +413,11 @@ function renderHeader(txn: Transaction): string {
         <span class="td-type-badge" style="background:${typeColor}">${esc(typeLabel)}</span>
       </div>
       <div class="td-txid-row">
-        <a class="td-txid" href="${ALLO}/tx/${esc(txId)}" target="_blank" rel="noopener"
+        <button class="td-txid" data-url="${ALLO}/tx/${esc(txId)}"
            data-full="${esc(txId)}" title="${esc(txId)}">
           ${esc(trunc(txId, 8, 6))}
           <span class="td-ext-icon">${ICONS.extLink}</span>
-        </a>
+        </button>
         <button class="td-copy-btn" type="button" data-copy="${esc(txId)}" aria-label="Copy transaction ID">
           ${ICONS.copy} <span>Copy</span>
         </button>
@@ -386,11 +446,11 @@ function renderParticipants(entities: Entity[]): string {
           <span class="td-entity-icon">${icon}</span>
           <span class="td-entity-idx">${e.index}</span>
         </div>
-        <a class="td-entity-label" href="${esc(e.url)}" target="_blank" rel="noopener"
+        <button class="td-entity-label" data-url="${esc(e.url)}"
            data-full="${esc(e.value)}" title="${esc(e.value)}">
           ${esc(e.label)}
           <span class="td-ext-icon">${ICONS.extLink}</span>
-        </a>
+        </button>
         ${e.kind === "application" ? '<span class="td-entity-kind">App</span>' : ""}
       </div>
     `;
@@ -490,10 +550,10 @@ function renderFlowRow(
     <div class="td-flow-row" style="animation-delay:${rowIdx * 60}ms">
       <div class="td-tree-col">
         <div class="td-tree-lines">${treeHtml}</div>
-        <a class="td-path-label" href="${esc(txLink)}" target="_blank" rel="noopener"
+        <button class="td-path-label" data-url="${esc(txLink)}"
            data-full="${esc(pathTitle)}" title="${esc(pathTitle)}">
           ${esc(pathLabel)}
-        </a>
+        </button>
       </div>
       <div class="td-flow-col" style="color:${typeColor}">
         <div class="td-flow-track">
@@ -557,10 +617,10 @@ function renderDetails(txn: Transaction): string {
     <div class="td-detail-row">
       <span class="td-detail-label">Sender</span>
       <span class="td-detail-value">
-        <a class="td-addr" href="${ALLO}/account/${esc(txn.sender)}" target="_blank" rel="noopener"
+        <button class="td-addr" data-url="${ALLO}/account/${esc(txn.sender)}"
            data-full="${esc(txn.sender)}" title="${esc(txn.sender)}">
           ${esc(trunc(txn.sender, 6, 6))} <span class="td-ext-icon">${ICONS.extLink}</span>
-        </a>
+        </button>
       </span>
     </div>
   `;
@@ -569,7 +629,10 @@ function renderDetails(txn: Transaction): string {
     rows += `
       <div class="td-detail-row">
         <span class="td-detail-label">Group</span>
-        <span class="td-detail-value td-mono" data-full="${esc(txn.group)}" title="${esc(txn.group)}">${esc(trunc(txn.group, 8, 6))}</span>
+        <button class="td-group-btn" data-group="${esc(txn.group)}" title="View atomic group">
+          <span class="td-mono" data-full="${esc(txn.group)}">${esc(trunc(txn.group, 8, 6))}</span>
+          <span class="td-ext-icon">${ICONS.extLink}</span>
+        </button>
       </div>
     `;
   }
@@ -604,6 +667,69 @@ function renderDetails(txn: Transaction): string {
       </div>
       <div class="td-detail-rows">${rows}</div>
     </section>
+  `;
+}
+
+// ── Rendering: Group View ───────────────────────────────────────────────
+
+function renderGroupView(group: TxnGroup, backTxnId?: string): string {
+  const entities = collectGroupEntities(group.transactions);
+  const rows = group.transactions.flatMap((txn) => flattenTree(txn, entities));
+
+  const typeLabels = Object.entries(group.typeCounts)
+    .map(
+      ([type, count]) =>
+        `<span class="td-type-badge td-type-badge-sm" style="background:${TYPE_COLORS[type] || "#64748b"}">${esc(TYPE_LABELS[type] || type)}=${count}</span>`
+    )
+    .join("");
+
+  const blockHtml = group.confirmedRound
+    ? `<button class="td-block-link" data-url="${ALLO}/block/${group.confirmedRound}">${group.confirmedRound.toLocaleString()}</button>`
+    : "\u2014";
+
+  return `
+    <div class="td-widget">
+      <article class="td-card">
+        <header class="td-header">
+          <div class="td-header-top">
+            <h1 class="td-title">Transaction Group</h1>
+            ${backTxnId ? `<button class="td-back-btn" data-back="${esc(backTxnId)}">← Back</button>` : ""}
+          </div>
+          <div class="td-txid-row">
+            <span class="td-txid td-mono" data-full="${esc(group.groupId)}" title="${esc(group.groupId)}">
+              ${esc(trunc(group.groupId, 8, 6))}
+            </span>
+            <button class="td-copy-btn" type="button" data-copy="${esc(group.groupId)}" aria-label="Copy group ID">
+              ${ICONS.copy} <span>Copy</span>
+            </button>
+          </div>
+          <div class="td-header-meta">
+            <span class="td-meta-chip">Block ${blockHtml}</span>
+            <span class="td-meta-chip">${group.transactions.length} txn${group.transactions.length !== 1 ? "s" : ""} ${typeLabels}</span>
+            ${group.roundTime ? `<span class="td-meta-chip">${esc(fmtTime(group.roundTime))}</span>` : ""}
+            ${group.roundTime ? `<span class="td-meta-chip td-meta-rel">${esc(relTime(group.roundTime))}</span>` : ""}
+            <span class="td-meta-chip">${esc(fmtAlgo(group.totalFee))} ALGO fee</span>
+          </div>
+        </header>
+        ${renderParticipants(entities)}
+        ${renderFlowDiagram(rows, entities)}
+      </article>
+    </div>
+  `;
+}
+
+function renderGroupLoading(groupId: string): string {
+  return `
+    <div class="td-widget">
+      <div class="td-card td-loading">
+        <div class="td-loading-anim">
+          <div class="td-dot d1"></div>
+          <div class="td-dot d2"></div>
+          <div class="td-dot d3"></div>
+        </div>
+        <div class="td-loading-text">Loading group ${esc(trunc(groupId, 6, 4))}\u2026</div>
+      </div>
+    </div>
   `;
 }
 
@@ -764,6 +890,50 @@ function attachInteractions() {
   });
 }
 
+// ── Group / Navigation State ────────────────────────────────────────────
+
+let lastTxnId: string | null = null;
+
+async function loadGroup(groupId: string) {
+  root.innerHTML = renderGroupLoading(groupId);
+  try {
+    const result = await app.callServerTool({
+      name: "indexer_lookup_transaction_by_id",
+      arguments: { groupId },
+    });
+    const sc = result.structuredContent as TxnDetailData | undefined;
+    if (sc?.txnGroup) {
+      root.innerHTML = renderGroupView(sc.txnGroup, lastTxnId ?? undefined);
+      attachInteractions();
+    } else {
+      root.innerHTML = renderError("No group data returned.");
+    }
+  } catch (err) {
+    console.error("Failed to load group:", err);
+    root.innerHTML = renderError("Failed to load group.");
+  }
+}
+
+async function loadTxn(txid: string) {
+  root.innerHTML = renderLoading(txid);
+  try {
+    const result = await app.callServerTool({
+      name: "indexer_lookup_transaction_by_id",
+      arguments: { txid },
+    });
+    const sc = result.structuredContent as TxnDetailData | undefined;
+    if (sc?.txnDetail?.transaction) {
+      root.innerHTML = renderWidget(sc as { txnDetail: { transaction: Transaction } });
+      attachInteractions();
+    } else {
+      root.innerHTML = renderError("No transaction data returned.");
+    }
+  } catch (err) {
+    console.error("Failed to load transaction:", err);
+    root.innerHTML = renderError("Failed to load transaction.");
+  }
+}
+
 // ── App Lifecycle ──────────────────────────────────────────────────────
 
 const root = document.getElementById("root")!;
@@ -780,6 +950,30 @@ function handleCtx(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "txn-detail-widget", version: "1.0.0" });
+
+// Handle external link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
+  if (el) {
+    const url = el.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
+
+// Handle group-view and back-navigation clicks
+document.addEventListener("click", (e) => {
+  const groupBtn = (e.target as HTMLElement).closest<HTMLElement>(".td-group-btn");
+  if (groupBtn) {
+    const groupId = groupBtn.dataset.group;
+    if (groupId) loadGroup(groupId);
+    return;
+  }
+  const backBtn = (e.target as HTMLElement).closest<HTMLElement>(".td-back-btn");
+  if (backBtn) {
+    const txid = backBtn.dataset.back;
+    if (txid) loadTxn(txid);
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as Record<string, unknown> | undefined;
@@ -800,7 +994,11 @@ app.ontoolinputpartial = (params) => {
 app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as TxnDetailData | undefined;
   if (sc?.txnDetail?.transaction) {
-    root.innerHTML = renderWidget(sc);
+    lastTxnId = sc.txnDetail.transaction.id ?? null;
+    root.innerHTML = renderWidget(sc as { txnDetail: { transaction: Transaction } });
+    attachInteractions();
+  } else if (sc?.txnGroup) {
+    root.innerHTML = renderGroupView(sc.txnGroup, lastTxnId ?? undefined);
     attachInteractions();
   } else {
     root.innerHTML = renderError("No transaction data returned.");

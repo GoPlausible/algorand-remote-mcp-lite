@@ -79,7 +79,7 @@ function renderAssetRow(asset: AssetResult): string {
         <span class="as-asset-id">ASA ${asset.asset_id}</span>
       </div>
       ${getVerificationBadge(asset.verification_tier)}
-      <a class="allo-link" href="https://allo.info/asset/${asset.asset_id}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a>
+      <button class="allo-link" data-url="https://allo.info/asset/${asset.asset_id}" title="View on allo.info">${ALLO_SVG}</button>
     </div>
   `;
 }
@@ -218,6 +218,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "asset-search-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { query?: string } | undefined;

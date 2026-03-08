@@ -12,7 +12,7 @@ body {
 
 .ah-card {
   background: var(--color-background-primary, #ffffff);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border: 1px solid rgba(79, 64, 170, 0.35);
   border-radius: var(--border-radius-lg, 16px);
   padding: 20px;
   max-width: 520px;
@@ -53,7 +53,7 @@ body {
 /* Table wrapper */
 .ah-table-wrap {
   background: var(--color-background-secondary, #f8fafc);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border: 1px solid rgba(79, 64, 170, 0.35);
   border-radius: 10px;
   overflow: hidden;
   max-height: 400px;
@@ -89,7 +89,7 @@ body {
   color: var(--color-text-secondary, #64748b);
   padding: 10px 14px;
   border-bottom: 1px solid var(--color-border-primary, #e2e8f0);
-  background: var(--color-background-secondary, #f1f5f9);
+  background: rgba(79, 64, 170, 0.12);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -311,11 +311,13 @@ body {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--color-background-secondary, #f1f5f9);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
+  background: rgba(79, 64, 170, 0.12);
+  border: 1px solid rgba(79, 64, 170, 0.35);
   cursor: pointer;
   transition: all 0.2s ease;
   text-decoration: none;
+  padding: 0;
+  appearance: none;
   flex-shrink: 0;
 }
 .allo-link:hover {

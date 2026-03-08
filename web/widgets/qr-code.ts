@@ -95,7 +95,7 @@ function renderQrCard(data: QrData): string {
       </div>
 
       <div class="qr-link-section">
-        <a class="qr-open-btn" href="${data.qrCodeLink}" target="_blank" rel="noopener noreferrer">
+        <button class="qr-open-btn" data-url="${data.qrCodeLink}">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"/>
             <rect x="14" y="3" width="7" height="7"/>
@@ -111,7 +111,7 @@ function renderQrCard(data: QrData): string {
             <polyline points="15 3 21 3 21 9"/>
             <line x1="10" y1="14" x2="21" y2="3"/>
           </svg>
-        </a>
+        </button>
       </div>
 
       <div class="qr-uri-section">
@@ -222,6 +222,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "qr-code-widget", version: "1.0.0" });
+
+// Handle external link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
+  if (el) {
+    const url = el.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = () => {
   root.innerHTML = renderLoading();

@@ -132,7 +132,7 @@ function renderReceiptCard(data: ReceiptData): string {
 
         <hr class="rc-separator" />
 
-        <a class="rc-view-btn" href="${data.receiptLink}" target="_blank" rel="noopener noreferrer">View Full Receipt</a>
+        <button class="rc-view-btn" data-url="${data.receiptLink}">View Full Receipt</button>
       </div>
     </div>
   `;
@@ -191,6 +191,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "receipt-card-widget", version: "1.0.0" });
+
+// Handle external link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
+  if (el) {
+    const url = el.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = () => {
   root.innerHTML = renderLoading();

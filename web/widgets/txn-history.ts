@@ -164,7 +164,7 @@ function renderTxnRow(txn: Transaction, address: string): string {
         <div class="txn-meta">
           <span class="txn-time" title="Round ${txn.confirmedRound}">${timeStr}</span>
           <span class="txn-id" title="${txn.id}">${truncateTxId(txn.id)}</span>
-          <a class="allo-link" href="https://allo.info/tx/${txn.id}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a>
+          <button class="allo-link" data-url="https://allo.info/tx/${txn.id}" title="View on allo.info">${ALLO_SVG}</button>
         </div>
       </div>
     </div>
@@ -297,6 +297,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "txn-history-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;

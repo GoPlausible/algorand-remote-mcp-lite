@@ -86,7 +86,7 @@ function renderWalletCard(account: WalletAccount): string {
           </svg>
           Copy Address
         </button>
-        <a class="allo-link" href="https://allo.info/account/${account.address}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a>
+        <button class="allo-link" data-url="https://allo.info/account/${account.address}" title="View on allo.info">${ALLO_SVG}</button>
       </div>
     </div>
   `;
@@ -128,6 +128,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "wallet-card-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   root.innerHTML = renderLoading();

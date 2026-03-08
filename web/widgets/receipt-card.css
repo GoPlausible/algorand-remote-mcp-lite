@@ -231,6 +231,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  appearance: none;
   transition: all 0.15s ease;
   font-family: inherit;
   text-align: center;

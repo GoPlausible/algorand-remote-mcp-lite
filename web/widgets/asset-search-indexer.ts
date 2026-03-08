@@ -87,7 +87,7 @@ function renderTable(assets: AssetEntry[]): string {
         <td class="asi-cell">${unit}</td>
         <td class="asi-cell asi-right">${supply}</td>
         <td class="asi-cell asi-mono asi-address" title="${asset.params.creator}">${creator}</td>
-        <td class="asi-cell asi-cell-allo"><a class="allo-link" href="https://allo.info/asset/${asset.index}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a></td>
+        <td class="asi-cell asi-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${asset.index}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
   }).join("");
@@ -173,6 +173,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "asset-search-indexer-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { name?: string; unit?: string } | undefined;

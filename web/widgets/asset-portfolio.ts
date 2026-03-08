@@ -79,7 +79,7 @@ function renderPortfolio(data: AssetPortfolioData): string {
           <div class="ap-asset-top">
             <span class="ap-asset-id">${knownAssets[a.assetId]?.name ?? `ASA ${a.assetId}`}</span>
             ${a.isFrozen ? '<span class="ap-frozen-badge">Frozen</span>' : ""}
-            <a class="allo-link" href="https://allo.info/asset/${a.assetId}" target="_blank" rel="noopener" title="View on allo.info">${ALLO_SVG}</a>
+            <button class="allo-link" data-url="https://allo.info/asset/${a.assetId}" title="View on allo.info">${ALLO_SVG}</button>
           </div>
           <span class="ap-asset-amount">${formatAssetAmount(a.amount, a.assetId)}</span>
         </div>
@@ -223,6 +223,15 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "asset-portfolio-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;

@@ -12,7 +12,7 @@ body {
 
 .wallet-card {
   background: var(--color-background-primary, #ffffff);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border: 1px solid rgba(79, 64, 170, 0.35);
   border-radius: var(--border-radius-lg, 16px);
   padding: 24px;
   max-width: 420px;
@@ -66,7 +66,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary, #64748b);
-  background: var(--color-background-secondary, #f1f5f9);
+  background: rgba(79, 64, 170, 0.12);
   padding: 4px 10px;
   border-radius: 8px;
   text-transform: capitalize;
@@ -163,9 +163,9 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 10px 16px;
-  background: var(--color-background-secondary, #f1f5f9);
+  background: rgba(79, 64, 170, 0.12);
   color: var(--color-text-primary, #1a1a2e);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border: 1px solid rgba(79, 64, 170, 0.35);
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
@@ -254,9 +254,11 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  border: 1px solid var(--color-border-primary, #e2e8f0);
-  background: var(--color-background-secondary, #f1f5f9);
+  border: 1px solid rgba(79, 64, 170, 0.35);
+  background: rgba(79, 64, 170, 0.12);
   text-decoration: none;
+  padding: 0;
+  appearance: none;
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
