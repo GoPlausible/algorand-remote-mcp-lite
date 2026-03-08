@@ -21,10 +21,9 @@ When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns
 - \`structuredText\`: A rendered UI card with formatted, visual summary
 
 **Rules:**
-1. When \`structuredText\` is present in the response, do NOT repeat, reformat, or summarize the \`text\` content — the user already sees the structured UI card inline.
-2. Keep any follow-up commentary minimal (e.g. "197 assets found. Need the next page?") — the card speaks for itself.
-3. Only fall back to parsing/displaying \`text\` content if \`structuredText\` is absent or empty.
-4. If the user explicitly asks for raw data, then display the \`text\` content.
+1. When \`structuredText\` is present in the response, do NOT repeat, reformat, or summarize the \`text\` content — the user already sees the structured UI card inline. Just ask user if they want to see the raw text data as well.
+2. Only fall back to parsing/displaying \`text\` content if \`structuredText\` is absent or empty.
+3. If the user explicitly asks for raw data, then display the \`text\` content.
 
 ## Error Handling
 
