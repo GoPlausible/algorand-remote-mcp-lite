@@ -1,0 +1,165 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: transparent;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.wrc-card {
+  background: var(--color-background-primary, #ffffff);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: var(--border-radius-lg, 16px);
+  padding: 24px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Header */
+.wrc-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wrc-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #dc2626, #f97316);
+  display: flex; align-items: center; justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.wrc-title { font-size: 16px; font-weight: 700; color: var(--color-text-primary, #1a1a2e); }
+.wrc-subtitle { font-size: 12px; color: var(--color-text-secondary, #64748b); margin-top: 2px; }
+
+/* Warning banner */
+.wrc-warning {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-left: 3px solid #dc2626;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #64748b);
+  font-weight: 500;
+}
+
+/* Address section */
+.wrc-address-section {
+  background: var(--color-background-secondary, #f8fafc);
+  border: 1px solid rgba(14, 165, 233, 0.15);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.wrc-address-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-text-secondary, #64748b);
+  margin-bottom: 8px;
+}
+
+.wrc-address-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wrc-address-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1a1a2e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.wrc-mono {
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  letter-spacing: 0.3px;
+}
+
+.wrc-copy-btn {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  background: var(--color-background-primary, #ffffff);
+  color: var(--color-text-secondary, #64748b);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.wrc-copy-btn:hover { background: var(--color-background-secondary, #f1f5f9); color: var(--color-text-primary, #1a1a2e); }
+.wrc-copied { color: #059669 !important; border-color: rgba(5, 150, 105, 0.3) !important; }
+
+/* User info row */
+.wrc-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wrc-meta-chip {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #64748b);
+  background: var(--color-background-secondary, #f1f5f9);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+/* Loading */
+.wrc-card.wrc-loading {
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  gap: 14px;
+  border-color: rgba(220, 38, 38, 0.15);
+}
+
+.wrc-loading-pulse {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, #dc2626, #f97316);
+  animation: wrc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes wrc-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.wrc-loading-text { font-size: 14px; color: var(--color-text-secondary, #64748b); }
+
+/* Error */
+.wrc-card.wrc-error {
+  align-items: center; justify-content: center;
+  min-height: 140px; gap: 12px;
+}
+
+.wrc-error-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #fecaca; color: #dc2626;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 18px;
+}
+
+.wrc-error-text { font-size: 14px; color: var(--color-text-secondary, #64748b); }
+
+/* Dark mode */
+[data-theme="dark"] .wrc-error-icon { background: rgba(220, 38, 38, 0.2); color: #f87171; }

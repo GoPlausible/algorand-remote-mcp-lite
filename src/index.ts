@@ -119,7 +119,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerBasicUtilityTools() {
 		// Register Algorand utility tools
-		registerUtilityTools(this.server, this.env, this.props);
+		registerUtilityTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	/**
@@ -152,7 +152,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerAlgodTools() {
 		// Register algod tools for TEAL compilation and simulation
-		registerAlgodTools(this.server, this.env, this.props);
+		registerAlgodTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	/**

@@ -68,6 +68,24 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     description: 'Interactive wallet card UI widget',
   });
 
+  // Register wallet reset card widget resource
+  const walletResetCardResourceUri = 'ui://wallet/wallet-reset-card.html';
+  registerWidget(server, assets, {
+    name: 'wallet-reset-card-widget',
+    htmlPath: '/widgets/wallet-reset-card.html',
+    resourceUri: walletResetCardResourceUri,
+    description: 'Wallet account reset confirmation card with new address and copy button',
+  });
+
+  // Register wallet role card widget resource
+  const walletRoleCardResourceUri = 'ui://wallet/wallet-role-card.html';
+  registerWidget(server, assets, {
+    name: 'wallet-role-card-widget',
+    htmlPath: '/widgets/wallet-role-card.html',
+    resourceUri: walletRoleCardResourceUri,
+    description: 'Vault Role ID widget with masked display, reveal toggle, copy button, and security warnings',
+  });
+
   // Register asset portfolio widget resource
   const assetPortfolioResourceUri = 'ui://wallet/asset-portfolio.html';
   registerWidget(server, assets, {
@@ -90,6 +108,10 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     'wallet_reset_account',
     {
       description: 'Reset the wallet account for the configured user. CAUTION: This will delete existing keys and create new ones. Warn user before proceeding.',
+      _meta: {
+        ui: { resourceUri: walletResetCardResourceUri },
+        'ui/resourceUri': walletResetCardResourceUri,
+      },
     },
     async () => {
       try {
@@ -165,12 +187,11 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           if (!roleId) {
             throw new Error(`No Role ID found for entity: ${providerEntity}`);
           }
-          return ResponseProcessor.processResponse({
-            address,
-            role: roleId,
-            user: props.email,
-            provider: props.provider,
-          });
+          const resetResult = { address, user: props.email, provider: props.provider };
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, resetResult }, null, 2) }],
+            structuredContent: { structuredData: true, resetResult },
+          };
         }
         throw new Error('No active agent wallet configured');
       } catch (error: any) {
@@ -189,15 +210,19 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     'wallet_get_role',
     {
       description: 'Get the role UUID for the configured wallet to be used to login into Hashicorp Vault with OIDC. This is a very sensitive piece of information. Always protect it and avoid sharing it!',
+      _meta: {
+        ui: { resourceUri: walletRoleCardResourceUri },
+        'ui/resourceUri': walletRoleCardResourceUri,
+      },
     },
     async () => {
       try {
         let providerEmail = `${props.provider}--${props.email}`
         const entityId = await env.VAULT_ENTITIES?.get(providerEmail);
-        let providerEntity = `${props.provider}--${entityId}`
+        const providerEntity = `${props.provider}--${entityId}`
         console.log(`Entity ID for ${providerEmail} from KV store:`, providerEntity);
         let roleId = null;
-        if (!!entityId) {
+        if (entityId) {
           console.log(`Fetching role ID from KV for entity ${providerEntity}`);
           roleId = await env.VAULT_ENTITIES?.get(providerEntity);
           console.log(`Role ID for ${providerEntity} from KV store:`, roleId);
@@ -211,12 +236,11 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           };
         }
 
-        return ResponseProcessor.processResponse({
-          role: roleId,
-          user: props.email,
-          provider: props.provider,
-
-        });
+        const roleData = { role: roleId, user: props.email, provider: props.provider };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, roleData }, null, 2) }],
+          structuredContent: { structuredData: true, roleData },
+        };
       } catch (error: any) {
         return {
           content: [{

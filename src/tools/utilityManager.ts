@@ -9,11 +9,31 @@ import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { skill } from '../utils/Skill.js';
 import type { Env, Props } from '../types';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 
 /**
  * Register utility tools to the MCP server
  */
-export function registerUtilityTools(server: McpServer,env: Env, props: Props): void {
+export function registerUtilityTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+
+  // Register address-validate widget
+  const addressValidateResourceUri = 'ui://utility/address-validate-card.html';
+  registerWidget(server, assets, {
+    name: 'address-validate-card-widget',
+    htmlPath: '/widgets/address-validate-card.html',
+    resourceUri: addressValidateResourceUri,
+    description: 'Address validation result widget with check/cross icon and copy button',
+  });
+
+  // Register app-address widget
+  const appAddressResourceUri = 'ui://utility/app-address-card.html';
+  registerWidget(server, assets, {
+    name: 'app-address-card-widget',
+    htmlPath: '/widgets/app-address-card.html',
+    resourceUri: appAddressResourceUri,
+    description: 'Application address card with app ID badge, address copy and explorer link',
+  });
+
   // Validate address
   server.registerTool(
     'sdk_validate_address',
@@ -22,11 +42,19 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
       inputSchema: {
         address: z.string().describe('Address in standard Algorand format (58 characters)')
       },
+      _meta: {
+        ui: { resourceUri: addressValidateResourceUri },
+        'ui/resourceUri': addressValidateResourceUri,
+      },
     },
     async ({ address }) => {
       try {
         const isValid = algosdk.isValidAddress(address);
-        return ResponseProcessor.processResponse({ isValid });
+        const validationResult = { address, isValid };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, validationResult }, null, 2) }],
+          structuredContent: { structuredData: true, validationResult },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -97,11 +125,23 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
       inputSchema: {
         appId: z.number().int().positive().describe('Application ID to get the address for')
       },
+      _meta: {
+        ui: { resourceUri: appAddressResourceUri },
+        'ui/resourceUri': appAddressResourceUri,
+      },
     },
     async ({ appId }) => {
       try {
         const address = algosdk.getApplicationAddress(appId).toString();
-        return ResponseProcessor.processResponse({ address });
+        const network = env.ALGORAND_ALGOD?.includes('mainnet') ? 'mainnet' : 'testnet';
+        const explorerUrl = network === 'mainnet'
+          ? `https://allo.info/account/${address}`
+          : `https://testnet.allo.info/account/${address}`;
+        const appAddress = { appId, address, explorerUrl };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, appAddress }, null, 2) }],
+          structuredContent: { structuredData: true, appAddress },
+        };
       } catch (error: any) {
         return {
           content: [{

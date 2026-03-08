@@ -212,6 +212,15 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
     description: 'SDK signing UI widget with signing animation and success checkmark',
   });
 
+  // Register group-id-card widget
+  const groupIdCardResourceUri = 'ui://txn/group-id-card.html';
+  registerWidget(server, assets, {
+    name: 'group-id-card-widget',
+    htmlPath: '/widgets/group-id-card.html',
+    resourceUri: groupIdCardResourceUri,
+    description: 'Group ID assignment result card with copy button and atomic group info',
+  });
+
   // Assign group ID to transactions
   server.registerTool(
     'sdk_assign_group_id',
@@ -219,6 +228,10 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       description: 'To group transactions in atomic way (one fails all fail), assign a group ID to a set of transactions for atomic execution',
       inputSchema: {
         encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions')
+      },
+      _meta: {
+        ui: { resourceUri: groupIdCardResourceUri },
+        'ui/resourceUri': groupIdCardResourceUri,
       },
     },
     async ({ encodedTxns }) => {
@@ -241,10 +254,12 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         console.log(groupedTxns);
 
         // Return the transactions with group IDs
-        return ResponseProcessor.processResponse({
-          groupId: Buffer.from(decodedTxns[0].group!).toString('base64'),
-          groupedTxns
-        });
+        const groupId = Buffer.from(decodedTxns[0].group!).toString('base64');
+        const groupIdResult = { groupId, txnCount: groupedTxns.length };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, groupIdResult, groupedTxns }, null, 2) }],
+          structuredContent: { structuredData: true, groupIdResult },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -429,8 +444,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
         // Return signed transactions with structuredContent for widget
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed securely using vault keys' }, null, 2) }],
-          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'wallet' }, signedTxns: signatures },
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, signedTxns: signatures, message: 'Transactions signed securely using vault keys' }, null, 2) }],
+          structuredContent: { structuredData: true, signResult: { signedCount: signatures.length, signerType: 'wallet' }, signedTxns: signatures },
         };
       } catch (error: any) {
         return {
@@ -488,8 +503,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
         // Return signed transactions with structuredContent for widget
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed using mnemonic-derived account' }, null, 2) }],
-          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'sdk' }, signedTxns: signatures },
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, signedTxns: signatures, message: 'Transactions signed using mnemonic-derived account' }, null, 2) }],
+          structuredContent: { structuredData: true, signResult: { signedCount: signatures.length, signerType: 'sdk' }, signedTxns: signatures },
         };
       } catch (error: any) {
         return {
@@ -599,10 +614,10 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
           explorerUrl,
         };
 
-        const textContent = JSON.stringify({ confirmed: true, groupReceipt }, null, 2);
+        const textContent = JSON.stringify({ structuredData: true, confirmed: true, groupReceipt }, null, 2);
         return {
           content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { groupReceipt },
+          structuredContent: { structuredData: true, groupReceipt },
         };
       } catch (error: any) {
         return {

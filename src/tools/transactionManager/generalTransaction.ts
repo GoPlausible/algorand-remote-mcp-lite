@@ -244,8 +244,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         const txID = txn.txID();
         const signedTxnB64 = Buffer.from(encodedSignedTxn).toString('base64');
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ txID, signedTxn: signedTxnB64 }, null, 2) }],
-          structuredContent: { signResult: { txID, signedCount: 1, signerType: 'wallet' }, signedTxn: signedTxnB64 },
+          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, txID, signedTxn: signedTxnB64 }, null, 2) }],
+          structuredContent: { structuredData: true, signResult: { txID, signedCount: 1, signerType: 'wallet' }, signedTxn: signedTxnB64 },
         };
 
 
@@ -453,10 +453,10 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
           explorerUrl,
         };
 
-        const textContent = JSON.stringify({ confirmed: true, txnReceipt }, null, 2);
+        const textContent = JSON.stringify({ structuredData: true, confirmed: true, txnReceipt }, null, 2);
         return {
           content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { txnReceipt },
+          structuredContent: { structuredData: true, txnReceipt },
         };
       } catch (error: any) {
         return {
