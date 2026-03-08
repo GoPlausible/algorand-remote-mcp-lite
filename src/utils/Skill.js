@@ -63,26 +63,26 @@ Categories: \`arcs\`, \`sdks\`, \`algokit\`, \`algokit-utils\`, \`tealscript\`, 
 
 Before ANY transaction, validate these requirements:
 
-### 1. Minimum Balance Requirement (MBR)
+1. Minimum Balance Requirement (MBR)
 - Base MBR: 0.1 ALGO to keep account active
 - Each asset opt-in: +0.1 ALGO
 - Each app opt-in: +0.1 ALGO
 - Always include MBR in required funds calculation
 
-### 2. Asset Opt-In Verification
+2. Asset Opt-In Verification
 - For asset transactions, check opt-in with \`api_algod_get_account_asset_info\`
 - If not opted in, use \`wallet_optin_asset\` (one-step opt-in) before proceeding
 
-### 3. Transaction Fees
+3. Transaction Fees
 - Every transaction costs 1000 microAlgos (0.001 ALGO)
 - Add fee per transaction to total required funds
 - For groups: multiply fee by number of transactions in the group
 
-### 4. Balance Check
+4. Balance Check
 - Always fetch current balance before signing/sending
 - Verify: balance >= amount + fees + MBR
 
-### 5. Insufficient Funds Recovery
+5. Insufficient Funds Recovery
 - If ALGO or asset balance is insufficient, generate a top-up QR code using \`generate_algorand_qrcode\` with the wallet address and required amount
 - Instruct user to scan with Pera Wallet to top up
 - Always handle ALGO funding first, then asset transactions
