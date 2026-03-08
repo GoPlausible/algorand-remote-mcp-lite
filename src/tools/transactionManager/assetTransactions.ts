@@ -9,7 +9,6 @@ import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../../types';
 import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
-import * as msgpack from "algo-msgpack-with-bigint"
 import {
   getUserAddress,
   getPublicKey,
@@ -303,12 +302,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           throw new Error('Failed to get signature from vault');
         }
         const signature = Buffer.from(signatureResult.signature, 'base64');
-         const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-        const signedTxn: object = {
-          txn: txnObj,
-          sig: signature,
-        };
-        const encodedTxnUint8Array =new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true }))
+        // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+        const stxn = new algosdk.SignedTransaction({ txn, sig: new Uint8Array(signature) });
+        const encodedTxnUint8Array = algosdk.encodeMsgpack(stxn);
         const response = await algodClient.sendRawTransaction(encodedTxnUint8Array).do();
 
 

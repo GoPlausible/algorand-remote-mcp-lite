@@ -10,7 +10,6 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../../types';
 import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import { signWithTransit, getPublicKey/* , ensureUserAccount */ } from '../../utils/vaultManager';
-import * as msgpack from "algo-msgpack-with-bigint";
 
 /**
  * Concatenate multiple arrays into a single Uint8Array
@@ -200,6 +199,19 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
     description: 'Atomic group transaction receipt UI widget showing all txn IDs, types, involved accounts and total fees',
   });
 
+  // URIs for widgets registered by generalTransaction — no re-registration to avoid duplicates
+  const walletSignResourceUri = 'ui://txn/txn-sign-wallet.html';
+  const txnSubmitResourceUri = 'ui://txn/txn-submit.html';
+
+  // Register sdk-sign widget (unique to this module)
+  const sdkSignResourceUri = 'ui://txn/txn-sign-sdk.html';
+  registerWidget(server, assets, {
+    name: 'txn-sign-sdk-widget',
+    htmlPath: '/widgets/txn-sign-sdk.html',
+    resourceUri: sdkSignResourceUri,
+    description: 'SDK signing UI widget with signing animation and success checkmark',
+  });
+
   // Assign group ID to transactions
   server.registerTool(
     'sdk_assign_group_id',
@@ -318,6 +330,10 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
         keyName: z.string().describe('Key name of the signer for all transactions in the group')
       },
+      _meta: {
+        ui: { resourceUri: walletSignResourceUri },
+        'ui/resourceUri': walletSignResourceUri,
+      },
     },
     async ({ encodedTxns, keyName }) => {
       try {
@@ -341,7 +357,7 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         });
 
         // Assign group ID if not already assigned
-        let groupedTxns;
+        let groupedTxns: algosdk.Transaction[];
         if (!decodedTxns[0].group) {
           groupedTxns = algosdk.assignGroupID(decodedTxns);
         } else {
@@ -388,44 +404,9 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
             // Convert the base64 signature to Uint8Array
             const signature = Buffer.from(signatureResult.signature, 'base64');
             console.log('Signature:', signature);
-
-            // Convert the base64 public key to Uint8Array
-            const publicKeyBuffer = Buffer.from(publicKeyResult.publicKey, 'base64');
-            console.log('Public key buffer:', publicKeyBuffer);
-
-            // Get the address from the public key
-            const signerAddr = algosdk.encodeAddress(publicKeyBuffer);
-            console.log('Signer address:', signerAddr);
-            const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(decodedTxn));
-            console.log('Transaction object for encoding:', txnObj);
-
-            // Create a signed transaction object
-            const signedTxn: any = {
-              txn: txnObj,
-              sig: signature,
-            };
-            console.log('Signed transaction object:', signedTxn);
-
-            // Add AuthAddr if signing with a different key than From indicates
-            // Compare the actual bytes of the public keys, not their string representations
-            const fromPubKey = decodedTxn.sender.publicKey;
-            let keysMatch = fromPubKey.length === publicKeyBuffer.length;
-            if (keysMatch) {
-              for (let i = 0; i < fromPubKey.length; i++) {
-                if (fromPubKey[i] !== publicKeyBuffer[i]) {
-                  keysMatch = false;
-                  break;
-                }
-              }
-            }
-
-            if (!keysMatch) {
-              // Only add sgnr if the keys are actually different
-              signedTxn["sgnr"] = algosdk.decodeAddress(signerAddr).publicKey;
-            }
-
-            // Encode the signed transaction using MessagePack
-            const encodedSignedTxn: Uint8Array = new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true }))
+            // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+            const stxn = new algosdk.SignedTransaction({ txn: decodedTxn, sig: new Uint8Array(signature) });
+            const encodedSignedTxn = algosdk.encodeMsgpack(stxn);
             console.log('Encoded signed transaction:', encodedSignedTxn);
             console.log('TXN ID:', decodedTxn.txID());
 
@@ -446,11 +427,11 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
           throw new Error(`Failed to sign ${failedSignatures.length} transaction(s) in the group`);
         }
 
-        // Return the signed transactions
-        return ResponseProcessor.processResponse({
-          signedTxns: signatures,
-          message: 'Transactions signed securely using vault keys'
-        });
+        // Return signed transactions with structuredContent for widget
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed securely using vault keys' }, null, 2) }],
+          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'wallet' }, signedTxns: signatures },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -471,12 +452,15 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
         mnemonic: z.string().describe('25-word mnemonic for the signing account')
       },
+      _meta: {
+        ui: { resourceUri: sdkSignResourceUri },
+        'ui/resourceUri': sdkSignResourceUri,
+      },
     },
     async ({ encodedTxns, mnemonic }) => {
       try {
         // Derive account from mnemonic
         const account = algosdk.mnemonicToSecretKey(mnemonic);
-        const publicKeyBuffer = algosdk.decodeAddress(account.addr.toString()).publicKey;
 
         // Decode transactions
         const decodedTxns = encodedTxns.map(txn => {
@@ -493,52 +477,20 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
           groupedTxns = decodedTxns;
         }
 
-        // Sign each transaction with the mnemonic-derived key
+        // Sign each transaction — algosdk.signTransaction().blob is the full signed txn bytes
         const signatures = groupedTxns.map((txn: algosdk.Transaction) => {
           const signatureResult = algosdk.signTransaction(txn, account.sk);
-
           if (!signatureResult.blob) {
             throw new Error('Failed to sign transaction');
           }
-
-          // Extract signature from the signed blob
-          const signature = signatureResult.blob;
-          const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-
-          // Create signed transaction object
-          const signedTxn: any = {
-            txn: txnObj,
-            sig: signature,
-          };
-
-          // Add AuthAddr if signing with a different key than From indicates
-          const fromPubKey = txn.sender.publicKey;
-          let keysMatch = fromPubKey.length === publicKeyBuffer.length;
-          if (keysMatch) {
-            for (let i = 0; i < fromPubKey.length; i++) {
-              if (fromPubKey[i] !== publicKeyBuffer[i]) {
-                keysMatch = false;
-                break;
-              }
-            }
-          }
-
-          if (!keysMatch) {
-            signedTxn.sgnr = algosdk.decodeAddress(account.addr.toString()).publicKey;
-          }
-
-          // Encode the signed transaction using MessagePack
-          const encodedSignedTxn: Uint8Array = new Uint8Array(
-            msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true })
-          );
-
-          return Buffer.from(encodedSignedTxn).toString('base64');
+          return Buffer.from(signatureResult.blob).toString('base64');
         });
 
-        return ResponseProcessor.processResponse({
-          signedTxns: signatures,
-          message: 'Transactions signed using mnemonic-derived account'
-        });
+        // Return signed transactions with structuredContent for widget
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed using mnemonic-derived account' }, null, 2) }],
+          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'sdk' }, signedTxns: signatures },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -559,8 +511,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
       },
       _meta: {
-        ui: { resourceUri: groupReceiptResourceUri },
-        'ui/resourceUri': groupReceiptResourceUri,
+        ui: { resourceUri: txnSubmitResourceUri },
+        'ui/resourceUri': txnSubmitResourceUri,
       },
     },
     async ({ signedTxns }) => {

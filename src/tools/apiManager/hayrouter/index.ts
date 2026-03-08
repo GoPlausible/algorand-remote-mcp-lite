@@ -5,7 +5,6 @@
 
 import { z } from 'zod';
 import * as algosdk from 'algosdk';
-import * as msgpack from 'algo-msgpack-with-bigint';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResponseProcessor } from '../../../utils';
 import type { Env, Props } from '../../../types';
@@ -172,6 +171,7 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
           throw new Error('No active agent wallet configured');
         }
 
+        // Validate vault access before creating signer
         const publicKeyResult = await getPublicKey(env, props.email, props.provider);
         if (!publicKeyResult.success || !publicKeyResult.publicKey) {
           throw new Error('Failed to get public key from vault');
@@ -201,14 +201,9 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
 
             const signature = new Uint8Array(Buffer.from(signatureResult.signature, 'base64'));
 
-            // Construct signed transaction using msgpack
-            const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-            const signedTxn: any = {
-              txn: txnObj,
-              sig: signature,
-            };
-
-            results.push(new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true })));
+            // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+            const stxn = new algosdk.SignedTransaction({ txn, sig: signature });
+            results.push(algosdk.encodeMsgpack(stxn));
           }
 
           return results;
