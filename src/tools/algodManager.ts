@@ -125,11 +125,13 @@ export function registerAlgodTools(server: McpServer,env: Env, props: Props): vo
   // );
   
   // Send raw transaction
-  server.tool(
+  server.registerTool(
     'sdk_send_raw_transaction',
-    'Submit signed transactions to the Algorand network',
-    { 
-      signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+    {
+      description: 'Submit signed transactions to the Algorand network',
+      inputSchema: {
+        signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+      },
     },
     async ({ signedTxns }) => {
 

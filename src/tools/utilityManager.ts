@@ -15,11 +15,13 @@ import type { Env, Props } from '../types';
  */
 export function registerUtilityTools(server: McpServer,env: Env, props: Props): void {
   // Validate address
-  server.tool(
+  server.registerTool(
     'sdk_validate_address',
-    'Check if an Algorand address is valid',
-    { 
-      address: z.string().describe('Address in standard Algorand format (58 characters)') 
+    {
+      description: 'Check if an Algorand address is valid',
+      inputSchema: {
+        address: z.string().describe('Address in standard Algorand format (58 characters)')
+      },
     },
     async ({ address }) => {
       try {
@@ -37,11 +39,13 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Encode address
-  server.tool(
+  server.registerTool(
     'sdk_encode_address',
-    'Encode a public key to an Algorand address',
-    { 
-      publicKey: z.string().describe('Public key in hexadecimal format to encode into an address') 
+    {
+      description: 'Encode a public key to an Algorand address',
+      inputSchema: {
+        publicKey: z.string().describe('Public key in hexadecimal format to encode into an address')
+      },
     },
     async ({ publicKey }) => {
       try {
@@ -60,11 +64,13 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Decode address
-  server.tool(
+  server.registerTool(
     'sdk_decode_address',
-    'Decode an Algorand address to a public key',
-    { 
-      address: z.string().describe('Address in standard Algorand format (58 characters) to decode') 
+    {
+      description: 'Decode an Algorand address to a public key',
+      inputSchema: {
+        address: z.string().describe('Address in standard Algorand format (58 characters) to decode')
+      },
     },
     async ({ address }) => {
       try {
@@ -84,11 +90,13 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Get application address
-  server.tool(
+  server.registerTool(
     'sdk_app_address_by_id',
-    'Get the address for a given application ID',
-    { 
-      appId: z.number().int().positive().describe('Application ID to get the address for') 
+    {
+      description: 'Get the address for a given application ID',
+      inputSchema: {
+        appId: z.number().int().positive().describe('Application ID to get the address for')
+      },
     },
     async ({ appId }) => {
       try {
@@ -311,10 +319,11 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   // );
 
   // Get agent skill for Algorand Remote MCP
-  server.tool(
+  server.registerTool(
     'algorand_mcp_skill',
-    'Access comprehensive Algorand MCP skill including step-by-step workflows, examples, and best practices.',
-    {},
+    {
+      description: 'Access comprehensive Algorand MCP skill including step-by-step workflows, examples, and best practices.',
+    },
     async () => {
       try {
         return ResponseProcessor.processResponse(skill);

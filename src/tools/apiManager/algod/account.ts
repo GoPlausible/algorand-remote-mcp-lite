@@ -118,8 +118,8 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
           textContent = JSON.stringify({ address, amount: accountDashboard.amount });
         }
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { accountDashboard },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, accountDashboard },
         };
       } catch (error: any) {
         return {
@@ -136,12 +136,14 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
   // ...
 
   // Get account asset information
-  server.tool(
+  server.registerTool(
     'algod_get_account_asset_info',
-    'Get account-specific asset information from algod',
     {
-      address: z.string().describe('The account public key'),
-      assetId: z.number().int().describe('The asset ID')
+      description: 'Get account-specific asset information from algod',
+      inputSchema: {
+        address: z.string().describe('The account public key'),
+        assetId: z.number().int().describe('The asset ID')
+      },
     },
     async ({ address, assetId }) => {
 

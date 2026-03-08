@@ -33,7 +33,7 @@ import { registerSkillResource } from './resources';
 export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	server = new McpServer({
 		name: "Algorand Remote MCP Lite",
-		version: "1.9.0",
+		version: "1.9.1",
 		description: "Algorand Remote MCP Lite (aka Wallet Edition) for interacting with the Algorand blockchain. Use algorand_mcp_skill tool at start of each session to learn how to interact and operate Algorand Remote MCP Lite.",
 	});
 
@@ -129,16 +129,16 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private async registerTransactionTools() {
 		// Register payment transaction tools
-		await registerGeneralTransactionTools(this.server, this.env, this.props);
+		await registerGeneralTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
 
 		// Register asset transaction tools
-		registerAssetTransactionTools(this.server, this.env, this.props);
+		registerAssetTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
 
 		// Register application transaction tools
 		// registerAppTransactionTools(this.server, this.env, this.props);
 
 		// Register group transaction tools
-		registerGroupTransactionTools(this.server, this.env, this.props);
+		registerGroupTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	/**

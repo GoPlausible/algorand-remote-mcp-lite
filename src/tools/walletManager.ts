@@ -86,10 +86,11 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   // }
 
   //Reset wallet account
-  server.tool(
+  server.registerTool(
     'wallet_reset_account',
-    'Reset the wallet account for the configured user. CAUTION: This will delete existing keys and create new ones. Warn user before proceeding.',
-    {},
+    {
+      description: 'Reset the wallet account for the configured user. CAUTION: This will delete existing keys and create new ones. Warn user before proceeding.',
+    },
     async () => {
       try {
         const publicKeyResult = await getPublicKey(env, props.email, props.provider);
@@ -184,10 +185,11 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
   
   // // Get wallet role UUID
-  server.tool(
+  server.registerTool(
     'wallet_get_role',
-    'Get the role UUID for the configured wallet to be used to login into Hashicorp Vault with OIDC. This is a very sensitive piece of information. Always protect it and avoid sharing it!',
-    {},
+    {
+      description: 'Get the role UUID for the configured wallet to be used to login into Hashicorp Vault with OIDC. This is a very sensitive piece of information. Always protect it and avoid sharing it!',
+    },
     async () => {
       try {
         let providerEmail = `${props.provider}--${props.email}`
@@ -303,8 +305,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           textContent = JSON.stringify({ address, amount: walletData.accounts[0]?.amount });
         }
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: walletData,
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, ...walletData },
         };
       } catch (error: any) {
         return {
@@ -405,8 +407,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { assetPortfolio },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, assetPortfolio },
         };
       } catch (error: any) {
         return {

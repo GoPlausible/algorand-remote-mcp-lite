@@ -465,12 +465,14 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
+              structuredData: true,
               verifiableCredentialLink: key,
               type: type,
               verifiableCredential: verifiableCredential
             }, null, 2)
           }],
           structuredContent: {
+            structuredData: true,
             mandate: {
               type: mandate.type,
               id: mandate.id,

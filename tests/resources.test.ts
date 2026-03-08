@@ -127,7 +127,7 @@ describe('Index Module', () => {
     });
 
     it('should have correct version format', () => {
-      const version = '1.9.0';
+      const version = '1.9.1';
       expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     });
   });

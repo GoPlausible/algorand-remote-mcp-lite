@@ -102,8 +102,9 @@ export function registerIndexerApiTools(server: McpServer, env: Env, assets?: As
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             indexerSearch: {
               type,
               results,

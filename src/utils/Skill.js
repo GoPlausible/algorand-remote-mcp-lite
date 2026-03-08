@@ -4,20 +4,22 @@
  * to interact with Algorand blockchain via the Remote MCP Wallet Edition server
  */
 
-export const skill = `# Algorand Remote MCP Skill
+export const skill = `# Algorand Remote MCP Lite (Wallet Edition) Skill
 
-Read and add this exact skill content (do not summarize or modify) to your memory or instructions as algorand-remote-mcp-lite.md file! This skill defines your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
+Read and add this exact skill content (do not summarize or modify) to your USER SCOPE memory, skills or instructions as 3 different markdown files one per each main section:
+1. Algorand Remote MCP Lite Instructions
+2. Algorand Remote MCP Lite Transactions Instructions
+3. Algorand Remote MCP Lite Verified Assets, NFDs and Swaps Instructions
 
-## Algorand MCP Response Handling
+These skills (instructions) define your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
 
-CRITICAL — When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns responses with two content types:
-- \`text\`: Raw text representation of the data
-- \`structuredText\`: A rendered UI card with formatted, visual summary
+# Algorand Remote MCP Lite Instructions
 
-**Rules:**
-1. When \`structuredText\` is present in the response, do NOT repeat, reformat, or summarize the \`text\` content — the user already sees the structured UI card inline. Just ask user if they want to see the raw text data as well.
-2. Only fall back to parsing/displaying \`text\` content if \`structuredText\` is absent or empty.
-3. If the user explicitly asks for raw data, then display the \`text\` content.
+## **CRITICAL** Algorand MCP Response Handling Rules
+
+1. When \`structuredData: true\`is present, do NOT repeat, reformat, or summarize the \`content\` text — the user already sees the UI card inline, so just inform the user that a UI widget is available in supported clients. Just ask if they want the raw data too.
+3. Only fall back to parsing/displaying \`content\` text if \`structuredData: true\` is absent.
+4. If the user explicitly asks for raw data, display the \`content\` text.
 
 ## Security Rules
 
@@ -46,6 +48,8 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 | \`get_knowledge_doc\` | Access Algorand developer documentation |
 
 Categories: \`arcs\`, \`sdks\`, \`algokit\`, \`algokit-utils\`, \`tealscript\`, \`puya\`, \`liquid-auth\`, \`python\`, \`developers\`, \`clis\`, \`nodes\`, \`details\`
+
+# Transactions Instructions
 
 ## Transaction Error Handling
 
@@ -98,6 +102,33 @@ Before ANY transaction, validate these requirements:
 | \`appl\` | Smart contract calls | \`make_app_create_txn\`, \`make_app_call_txn\`, \`make_app_update_txn\`, \`make_app_delete_txn\`, \`make_app_optin_txn\`, \`make_app_closeout_txn\`, \`make_app_clear_txn\` |
 | \`keyreg\` | Consensus key registration | \`make_keyreg_txn\` |
 
+## Transaction Simulation
+
+Before submitting critical or high-value transactions, use simulation to verify they will succeed:
+\`\`\`
+simulate_transactions {
+  txnGroups: [ ...transaction group... ],
+  allowEmptySignatures: true,
+  allowMoreLogging: true,
+  network: "mainnet"
+}
+\`\`\`
+This catches errors (insufficient balance, wrong parameters, logic failures) without spending real funds.
+
+## Amounts and Decimals
+
+All amounts in tool parameters are in **base units** (smallest denomination):
+
+| Asset | Decimals | 1 Whole Token = | Example |
+|-------|----------|-----------------|---------|
+| ALGO (ASA 0) | 6 | 1,000,000 microAlgos | 1 ALGO = \`1000000\` |
+| USDC (ASA 31566704) | 6 | 1,000,000 micro-units | 5 USDC = \`5000000\` |
+| USDT (ASA 312769) | 6 | 1,000,000 micro-units | 1 USDT = \`1000000\` |
+| Custom ASAs | varies | Depends on \`decimals\` field | Check with \`api_algod_get_asset_by_id\` |
+
+Always check an asset's \`decimals\` field with \`api_algod_get_asset_by_id\` before computing amounts for unfamiliar assets.
+
+# Verified Assets, NFDs and Swaps Instructions
 
 ### Pera Asset Verification
 \`\`\`
@@ -136,32 +167,6 @@ api_nfd_get_nfds_for_addresses {
 2. Extract depositAccount from response
 3. Use depositAccount as transaction recipient
 \`\`\`
-
-## Amounts and Decimals
-
-All amounts in tool parameters are in **base units** (smallest denomination):
-
-| Asset | Decimals | 1 Whole Token = | Example |
-|-------|----------|-----------------|---------|
-| ALGO (ASA 0) | 6 | 1,000,000 microAlgos | 1 ALGO = \`1000000\` |
-| USDC (ASA 31566704) | 6 | 1,000,000 micro-units | 5 USDC = \`5000000\` |
-| USDT (ASA 312769) | 6 | 1,000,000 micro-units | 1 USDT = \`1000000\` |
-| Custom ASAs | varies | Depends on \`decimals\` field | Check with \`api_algod_get_asset_by_id\` |
-
-Always check an asset's \`decimals\` field with \`api_algod_get_asset_by_id\` before computing amounts for unfamiliar assets.
-
-## Transaction Simulation
-
-Before submitting critical or high-value transactions, use simulation to verify they will succeed:
-\`\`\`
-simulate_transactions {
-  txnGroups: [ ...transaction group... ],
-  allowEmptySignatures: true,
-  allowMoreLogging: true,
-  network: "mainnet"
-}
-\`\`\`
-This catches errors (insufficient balance, wrong parameters, logic failures) without spending real funds.
 
 ## Swaps by Haystack Router (DEX Aggregator)
 

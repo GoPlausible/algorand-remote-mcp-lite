@@ -395,8 +395,9 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
         });
 
         return {
-          ...textResponse,
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
           structuredContent: {
+            structuredData: true,
             qrData: {
               uriType,
               uri,

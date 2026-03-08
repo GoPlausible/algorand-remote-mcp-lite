@@ -12,6 +12,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   type Env, type Props, VaultResponse,
 } from '../../types';
+import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import {
   // getUserAddress,
   // ensureUserAccount,
@@ -56,11 +57,30 @@ function uint8ToBase64(uint8Array: Uint8Array): string {
 /**
  * Register general transaction management tools to the MCP server
  */
-export async function registerGeneralTransactionTools(server: McpServer, env: Env, props: Props): Promise<void> {
+export async function registerGeneralTransactionTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): Promise<void> {
   // Ensure user has a vault-based account
   if (!props.email || !props.provider) {
     throw new Error('Email and provider must be provided in props');
   }
+
+  // Register txn-confirm widget resource
+  const txnConfirmResourceUri = 'ui://txn/txn-confirm.html';
+  registerWidget(server, assets, {
+    name: 'txn-confirm-widget',
+    htmlPath: '/widgets/txn-confirm.html',
+    resourceUri: txnConfirmResourceUri,
+    description: 'Transaction confirmation UI widget',
+  });
+
+  // Register txn-receipt widget resource
+  const txnReceiptResourceUri = 'ui://txn/txn-receipt.html';
+  registerWidget(server, assets, {
+    name: 'txn-receipt-widget',
+    htmlPath: '/widgets/txn-receipt.html',
+    resourceUri: txnReceiptResourceUri,
+    description: 'Transaction receipt UI widget showing confirmed round, ID, date and transfer details',
+  });
+
   // console.log(`Ensuring user account for ${props.email} with provider ${props.provider}`);
   // try {
   //   const accType = await ensureUserAccount(env, props.email, props.provider);
@@ -70,17 +90,23 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // }
 
   // Create payment transaction tool
-  server.tool(
+  server.registerTool(
     'sdk_txn_payment_transaction',
-    'Create a payment transaction on Algorand',
     {
-      sender: z.string().describe('Sender address'),
-      receiver: z.string().describe('Receiver address'),
-      amount: z.number().describe('Amount in microAlgos'),
-      fee: z.number().optional().describe('Transaction fee (in microAlgos)'),
-      note: z.string().optional().describe('Optional transaction note'),
-      closeRemainderTo: z.string().optional().describe('Optional close remainder to address'),
-      rekeyTo: z.string().optional().describe('Optional rekey to address')
+      description: 'Create a payment transaction on Algorand',
+      inputSchema: {
+        sender: z.string().describe('Sender address'),
+        receiver: z.string().describe('Receiver address'),
+        amount: z.number().describe('Amount in microAlgos'),
+        fee: z.number().optional().describe('Transaction fee (in microAlgos)'),
+        note: z.string().optional().describe('Optional transaction note'),
+        closeRemainderTo: z.string().optional().describe('Optional close remainder to address'),
+        rekeyTo: z.string().optional().describe('Optional rekey to address'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+        'ui/resourceUri': txnConfirmResourceUri,
+      },
     },
     async ({ sender, receiver, amount, note, closeRemainderTo, rekeyTo, fee }) => {
 
@@ -121,18 +147,22 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         });
 
         // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        const txnConfirm = {
+          type: 'payment' as const,
           txID: txn.txID(),
           encodedTxn: Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64'),
-          txnInfo: {
-            sender: sender,
-            receiver: receiver,
-            amount,
-            fee: fee ? fee : Number(txn.fee),
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          sender,
+          receiver,
+          amount,
+          fee: fee ? fee : Number(txn.fee),
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+        };
+        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { structuredData: true, txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -145,11 +175,13 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   );
 
   // Sign transaction with user's credentials
-  server.tool(
+  server.registerTool(
     'wallet_sign_transaction',
-    'Sign an Algorand transaction with your agent account',
     {
-      encodedTxn: z.string().describe('Base64 encoded transaction')
+      description: 'Sign an Algorand transaction with your agent account',
+      inputSchema: {
+        encodedTxn: z.string().describe('Base64 encoded transaction')
+      },
     },
     async ({ encodedTxn }) => {
       try {
@@ -362,10 +394,18 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // );
 
   // Submit signed transaction
-  server.tool(
+  server.registerTool(
     'sdk_submit_transaction',
-    'Submit a signed transaction to the Algorand network',
-    { signedTxn: z.string().describe('Base64 encoded signed transaction') },
+    {
+      description: 'Submit a signed transaction to the Algorand network',
+      inputSchema: {
+        signedTxn: z.string().describe('Base64 encoded signed transaction')
+      },
+      _meta: {
+        ui: { resourceUri: txnReceiptResourceUri },
+        'ui/resourceUri': txnReceiptResourceUri,
+      },
+    },
     async ({ signedTxn }) => {
 
       if (!env.ALGORAND_ALGOD) {
@@ -385,22 +425,64 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         }
         console.log('Signed TXN:', signedTxn);
         // Decode and submit transaction
-        const decodedTxn = Buffer.from(signedTxn, 'base64');
-        console.log('Decoded signed transaction:', decodedTxn);
-        const response = await algodClient.sendRawTransaction(new Uint8Array(decodedTxn)).do();
+        const decodedTxnBytes = new Uint8Array(Buffer.from(signedTxn, 'base64'));
+        console.log('Decoded signed transaction:', decodedTxnBytes);
+        const response = await algodClient.sendRawTransaction(decodedTxnBytes).do();
         const txId = response.txid;
         console.log('Transaction ID:', txId);
         // Wait for confirmation
         const confirmedTxn = await algosdk.waitForConfirmation(algodClient, txId, 5);
         console.log('Confirmed transaction:', confirmedTxn);
 
+        // Extract txn details from signed bytes for receipt
+        let txnType = 'pay';
+        let sender = '';
+        let receiver: string | undefined;
+        let amount: number | undefined;
+        let assetID: number | undefined;
+        let fee = 1000;
+        try {
+          const decoded = algosdk.decodeSignedTransaction(decodedTxnBytes);
+          const txn = decoded.txn;
+          txnType = String(txn.type ?? 'pay');
+          sender = txn.sender?.toString() ?? '';
+          fee = Number(txn.fee ?? 1000);
+          if (txnType === 'pay') {
+            receiver = txn.payment?.receiver?.toString();
+            amount = Number(txn.payment?.amount ?? 0);
+          } else if (txnType === 'axfer') {
+            receiver = txn.assetTransfer?.receiver?.toString();
+            amount = Number(txn.assetTransfer?.amount ?? 0);
+            assetID = Number(txn.assetTransfer?.assetIndex ?? 0);
+          }
+        } catch (_e) {
+          // fields remain at defaults
+        }
 
-        return ResponseProcessor.processResponse({
-          confirmed: true,
+        const network = env.ALGORAND_ALGOD?.includes('mainnet') ? 'mainnet' : 'testnet';
+        const explorerUrl = network === 'mainnet'
+          ? `https://allo.info/tx/${txId}`
+          : `https://testnet.allo.info/tx/${txId}`;
+
+        const txnReceipt = {
           txID: txId,
           confirmedRound: Number(confirmedTxn.confirmedRound),
-          txnResult: confirmedTxn
-        });
+          date: new Date().toISOString(),
+          type: txnType,
+          sender,
+          receiver,
+          amount,
+          assetID,
+          fee,
+          network,
+          explorerUrl,
+        };
+
+        const textContent = JSON.stringify({ confirmed: true, txnReceipt }, null, 2);
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { txnReceipt },
+        };
       } catch (error: any) {
         return {
           content: [{

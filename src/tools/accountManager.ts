@@ -80,11 +80,15 @@ export function registerAccountTools(server: McpServer,env: Env, props: Props): 
   // );
   
   // Check account balance
-  server.tool(
+  server.registerTool(
     'sdk_check_account_balance',
-    'Check the balance of an Algorand account',
-    { address: z.string() },
-    async ({ address }) => { 
+    {
+      description: 'Check the balance of an Algorand account',
+      inputSchema: {
+        address: z.string()
+      },
+    },
+    async ({ address }) => {
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../../types';
+import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import { signWithTransit, getPublicKey/* , ensureUserAccount */ } from '../../utils/vaultManager';
 import * as msgpack from "algo-msgpack-with-bigint";
 
@@ -189,13 +190,24 @@ async function buildTransaction(
 /**
  * Register group transaction tools to the MCP server
  */
-export function registerGroupTransactionTools(server: McpServer, env: Env, props: Props): void {
+export function registerGroupTransactionTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+  // Register group-receipt widget resource
+  const groupReceiptResourceUri = 'ui://txn/group-receipt.html';
+  registerWidget(server, assets, {
+    name: 'group-receipt-widget',
+    htmlPath: '/widgets/group-receipt.html',
+    resourceUri: groupReceiptResourceUri,
+    description: 'Atomic group transaction receipt UI widget showing all txn IDs, types, involved accounts and total fees',
+  });
+
   // Assign group ID to transactions
-  server.tool(
+  server.registerTool(
     'sdk_assign_group_id',
-    'To group transactions in atomic way (one fails all fail), assign a group ID to a set of transactions for atomic execution',
     {
-      encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions')
+      description: 'To group transactions in atomic way (one fails all fail), assign a group ID to a set of transactions for atomic execution',
+      inputSchema: {
+        encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions')
+      },
     },
     async ({ encodedTxns }) => {
       try {
@@ -233,14 +245,16 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // Create atomic transaction group
-  server.tool(
+  server.registerTool(
     'sdk_create_atomic_group',
-    'Create an atomic transaction group from multiple transactions of types pay, axfer, acfg, appl, afrz or keyreg',
     {
-      transactions: z.array(z.object({
-        type: z.enum(['pay', 'axfer', 'acfg', 'appl', 'afrz', 'keyreg']).describe('Transaction type'),
-        params: z.any().describe('Transaction-specific parameters')
-      })).describe('Array of transaction specifications')
+      description: 'Create an atomic transaction group from multiple transactions of types pay, axfer, acfg, appl, afrz or keyreg',
+      inputSchema: {
+        transactions: z.array(z.object({
+          type: z.enum(['pay', 'axfer', 'acfg', 'appl', 'afrz', 'keyreg']).describe('Transaction type'),
+          params: z.any().describe('Transaction-specific parameters')
+        })).describe('Array of transaction specifications')
+      },
     },
     async ({ transactions }) => {
       if (!env.ALGORAND_ALGOD) {
@@ -296,12 +310,14 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // Atomic transaction signing helper
-  server.tool(
+  server.registerTool(
     'wallet_sign_atomic_group',
-    'Sign an atomic transaction group. This is the default way of signing transaction groups by agents using this MCP. This uses the vault account binding to user OAuth account used to authenticate user to this MCP.',
     {
-      encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
-      keyName: z.string().describe('Key name of the signer for all transactions in the group')
+      description: 'Sign an atomic transaction group. This is the default way of signing transaction groups by agents using this MCP. This uses the vault account binding to user OAuth account used to authenticate user to this MCP.',
+      inputSchema: {
+        encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
+        keyName: z.string().describe('Key name of the signer for all transactions in the group')
+      },
     },
     async ({ encodedTxns, keyName }) => {
       try {
@@ -447,12 +463,14 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // SDK-based atomic transaction group signing with mnemonic
-  server.tool(
+  server.registerTool(
     'sdk_sign_atomic_group',
-    'Sign an atomic transaction group with an Algorand account mnemonic. Used for user testing with a mnemonic instead of using the embedded Vault based wallet accounts which are default to this MCP. Use only if explicitly asked by user to sign a transaction group using mnemonic!',
     {
-      encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
-      mnemonic: z.string().describe('25-word mnemonic for the signing account')
+      description: 'Sign an atomic transaction group with an Algorand account mnemonic. Used for user testing with a mnemonic instead of using the embedded Vault based wallet accounts which are default to this MCP. Use only if explicitly asked by user to sign a transaction group using mnemonic!',
+      inputSchema: {
+        encodedTxns: z.array(z.string()).describe('Array of base64-encoded unsigned transactions'),
+        mnemonic: z.string().describe('25-word mnemonic for the signing account')
+      },
     },
     async ({ encodedTxns, mnemonic }) => {
       try {
@@ -533,11 +551,17 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // Submit atomic transaction group
-  server.tool(
+  server.registerTool(
     'sdk_submit_atomic_group',
-    'Submit a signed atomic transaction group to the Algorand network',
     {
-      signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+      description: 'Submit a signed atomic transaction group to the Algorand network',
+      inputSchema: {
+        signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+      },
+      _meta: {
+        ui: { resourceUri: groupReceiptResourceUri },
+        'ui/resourceUri': groupReceiptResourceUri,
+      },
     },
     async ({ signedTxns }) => {
       if (!env.ALGORAND_ALGOD) {
@@ -569,12 +593,65 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         const confirmedTxn = await algosdk.waitForConfirmation(algodClient, txId, 10);
         console.log('Confirmed transaction:', confirmedTxn);
 
-        return ResponseProcessor.processResponse({
-          confirmed: true,
-          txID: txId,
-          confirmedRound: confirmedTxn.confirmedRound,
-          txnResult: confirmedTxn
-        });
+        // Extract per-txn details for receipt
+        const transactions: Array<{
+          txID: string; type: string; sender: string;
+          receiver?: string; amount?: number; assetID?: number; fee: number;
+        }> = [];
+        const involvedSet = new Set<string>();
+        let totalFees = 0;
+
+        for (const decodedBytes of decodedTxns) {
+          try {
+            const decoded = algosdk.decodeSignedTransaction(decodedBytes);
+            const txn = decoded.txn;
+            const txnType = String(txn.type ?? 'pay');
+            const sender = txn.sender?.toString() ?? '';
+            const fee = Number(txn.fee ?? 1000);
+            totalFees += fee;
+            if (sender) involvedSet.add(sender);
+
+            let receiver: string | undefined;
+            let amount: number | undefined;
+            let assetID: number | undefined;
+            if (txnType === 'pay') {
+              receiver = txn.payment?.receiver?.toString();
+              amount = Number(txn.payment?.amount ?? 0);
+              if (receiver) involvedSet.add(receiver);
+            } else if (txnType === 'axfer') {
+              receiver = txn.assetTransfer?.receiver?.toString();
+              amount = Number(txn.assetTransfer?.amount ?? 0);
+              assetID = Number(txn.assetTransfer?.assetIndex ?? 0);
+              if (receiver) involvedSet.add(receiver);
+            }
+            transactions.push({ txID: txn.txID(), type: txnType, sender, receiver, amount, assetID, fee });
+          } catch (_e) {
+            // skip undecoded txn
+          }
+        }
+
+        const network = env.ALGORAND_ALGOD?.includes('mainnet') ? 'mainnet' : 'testnet';
+        const explorerUrl = network === 'mainnet'
+          ? `https://allo.info/tx/${txId}`
+          : `https://testnet.allo.info/tx/${txId}`;
+
+        const groupReceipt = {
+          groupTxID: txId,
+          confirmedRound: Number(confirmedTxn.confirmedRound),
+          date: new Date().toISOString(),
+          txnCount: decodedTxns.length,
+          totalFees,
+          involvedAddresses: Array.from(involvedSet),
+          transactions,
+          network,
+          explorerUrl,
+        };
+
+        const textContent = JSON.stringify({ confirmed: true, groupReceipt }, null, 2);
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { groupReceipt },
+        };
       } catch (error: any) {
         return {
           content: [{

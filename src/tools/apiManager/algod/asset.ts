@@ -279,8 +279,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { assetDetails },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, assetDetails },
         };
       } catch (error: any) {
         return {
@@ -447,8 +447,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
 
         const textResponse = ResponseProcessor.processResponse(data);
         return {
-          ...textResponse,
-          structuredContent: { assetDetails: data },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          structuredContent: { structuredData: true, assetDetails: data },
         };
       } catch (error: any) {
         return {
@@ -536,8 +536,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
 
         const textResponse = ResponseProcessor.processResponse(filteredAssets, pageToken);
         return {
-          ...textResponse,
-          structuredContent: { searchResults },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          structuredContent: { structuredData: true, searchResults },
         };
       } catch (error: any) {
         return {

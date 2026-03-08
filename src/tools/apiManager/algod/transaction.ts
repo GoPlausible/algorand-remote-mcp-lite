@@ -26,11 +26,13 @@ function createAlgoClient(algodUrl: string, token:string): algosdk.Algodv2 | nul
  */
 export function registerTransactionApiTools(server: McpServer,env: Env): void {
   // Get transaction information by ID
-  server.tool(
+  server.registerTool(
     'algod_get_pending_txn_info',
-    'Get transaction details from algod by transaction ID',
-    { 
-      txid: z.string().describe('The transaction ID')
+    {
+      description: 'Get transaction details from algod by transaction ID',
+      inputSchema: {
+        txid: z.string().describe('The transaction ID')
+      },
     },
     async ({ txid }) => {
 

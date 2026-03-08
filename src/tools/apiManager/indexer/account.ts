@@ -150,8 +150,9 @@ export function registerIndexerAccountTools(server: McpServer, env: Env, assets?
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             accountAssets: {
               address,
               assets: assetsList,
@@ -335,8 +336,9 @@ export function registerIndexerAccountTools(server: McpServer, env: Env, assets?
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             accountSearch: {
               accounts: accountsList,
               totalAccounts: accountsList.length,

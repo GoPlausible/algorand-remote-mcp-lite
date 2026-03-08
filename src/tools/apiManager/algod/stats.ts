@@ -244,8 +244,8 @@ export function registerStatsTools(server: McpServer, env: Env, assets?: AssetsB
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { chainWeather },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, chainWeather },
         };
       } catch (error: any) {
         return {

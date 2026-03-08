@@ -154,8 +154,9 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             assetHolders: {
               assetId,
               balances,
@@ -256,8 +257,9 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             assetSearch: {
               assets: assetsList,
               totalAssets: assetsList.length,

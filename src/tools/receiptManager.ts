@@ -321,8 +321,9 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
         });
 
         return {
-          ...textResponse,
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
           structuredContent: {
+            structuredData: true,
             receipt: {
               sender,
               receiver,

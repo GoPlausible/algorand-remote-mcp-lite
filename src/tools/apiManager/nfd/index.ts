@@ -151,8 +151,8 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { nfdAccount },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, nfdAccount },
         };
       } catch (error: any) {
         return {
@@ -229,8 +229,9 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         }
 
         return {
-          content: [{ type: 'text' as const, text: textContent }],
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
           structuredContent: {
+            structuredData: true,
             nfdList: {
               address,
               nfds: nfds.map((nfd: any) => ({

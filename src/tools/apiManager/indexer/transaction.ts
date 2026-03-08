@@ -141,8 +141,9 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
           const typeCounts: Record<string, number> = {};
           for (const t of transactions) typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
           return {
-            content: [{ type: 'text' as const, text: `Group ${groupId.slice(0, 12)}…: ${transactions.length} transactions in round ${confirmedRound}` }],
+            content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, group: groupId.slice(0, 12), transactionCount: transactions.length, confirmedRound }, null, 2) }],
             structuredContent: {
+              structuredData: true,
               txnGroup: { groupId, transactions, totalFee, confirmedRound, roundTime, typeCounts },
             },
           };
@@ -180,8 +181,9 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
         const textResponse = ResponseProcessor.processResponse(response, pageToken);
 
         return {
-          ...textResponse,
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
           structuredContent: {
+            structuredData: true,
             txnDetail: { transaction },
           },
         };
@@ -335,8 +337,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
           textContent = JSON.stringify({ address, transactionCount: allTxns.length });
         }
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { txnHistory },
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          structuredContent: { structuredData: true, txnHistory },
         };
       } catch (error: any) {
         return {
