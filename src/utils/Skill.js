@@ -6,17 +6,11 @@
 
 export const skill = `# Algorand Remote MCP Skill
 
-Read and add this exact skill content (do not summarize or modify) to your memory as algorand-remote-mcp-lite.md file! This skill defines your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
-
-## Identity and Configuration
-
-- **Network**: Algorand Mainnet (all asset IDs and examples reference mainnet)
-- **Signing**: Server-side signing via HashiCorp Vault — never request private keys or mnemonics unless the user explicitly asks
-- **Wallet Role UUID**: Retrieved only via \`wallet_get_role\` — this is sensitive information. Always warn users to protect it and never share it
+Read and add this exact skill content (do not summarize or modify) to your memory or instructions as algorand-remote-mcp-lite.md file! This skill defines your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
 
 ## Algorand MCP Response Handling
 
-When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns responses with two content types:
+CRITICAL — When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns responses with two content types:
 - \`text\`: Raw text representation of the data
 - \`structuredText\`: A rendered UI card with formatted, visual summary
 
@@ -25,24 +19,14 @@ When calling any Algorand MCP tool (\`mcp_algorand-remo_*\`), the server returns
 2. Only fall back to parsing/displaying \`text\` content if \`structuredText\` is absent or empty.
 3. If the user explicitly asks for raw data, then display the \`text\` content.
 
-## Error Handling
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| \`Asset hasn't been opted in\` | Missing opt-in | Opt in to asset first |
-| \`Overspend\` | Fee + amount > balance | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
-| \`Insufficient balance\` | Not enough ALGO or ASA | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
-| \`Spending limit exceeded\` | Transaction exceeds wallet allowance or daily limit | Inform user, adjust spending limits |
-
-
-> **CRITICAL — Overspend / Insufficient Balance**: If a transaction or swap fails due to overspending, insufficient balance, or negative balance errors, **DO NOT continue or retry**. Immediately call \`wallet_get_info\` to check the current balance, then inform the user of the shortfall (required amount vs. available balance including MBR and fees). Do not attempt alternative amounts or re-submit — wait for the user to fund the account or confirm next steps.
-
 ## Security Rules
 
 1. **Mainnet Warning**: All operations use real assets with real value. Exercise extreme caution.
 2. **Transaction Verification**: Always verify parameters before submission. Mainnet transactions are irreversible.
 3. **Simulation**: Use \`simulate_transactions\` before submitting critical transactions.
 4. **Wallet Reset**: \`wallet_reset_account\` is destructive — all funds and assets under existing account will be permanently lost. Always transfer funds first and warn the user.
+5. **Signing**: Server-side signing via HashiCorp Vault — never request private keys or mnemonics unless the user explicitly asks
+6. **Wallet Role UUID**: Retrieved only via \`wallet_get_role\` — this is sensitive information. Always warn users to protect it and never share it
 
 ## Pagination
 
@@ -55,14 +39,6 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 3. **Verify asset opt-in** before any asset transfer
 4. **Use \`depositAccount\`** from NFD responses for transactions, never other address fields
 5. **Handle ALGO funding first** when both ALGO and asset top-ups are needed
-6. **Default to mainnet** — this system is configured for Algorand Mainnet
-7. **Use knowledge tools** for developer documentation: \`get_knowledge_doc\` with category prefix (e.g., 'arcs:specs:arc-0003.md')
-8. **Warn about unverified assets** — always check verification status before transacting unknown ASAs
-9. **Simulate critical transactions** before submitting with \`simulate_transactions\` to catch errors without spending funds
-10. **Use Haystack Router for swaps** — it finds the best price across multiple DEXes automatically; 
-11. **Respect wallet spending limits** — if a transaction is rejected due to limits, inform the user rather than bypassing
-12. **Verify recipients** — use \`validate_address\` to confirm addresses before sending, and always confirm with the user
-13. **CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
 
 ## Using Knowledge Base
 | Tool | Purpose |
@@ -71,13 +47,17 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 
 Categories: \`arcs\`, \`sdks\`, \`algokit\`, \`algokit-utils\`, \`tealscript\`, \`puya\`, \`liquid-auth\`, \`python\`, \`developers\`, \`clis\`, \`nodes\`, \`details\`
 
-## Session Initialization Protocol
+## Transaction Error Handling
 
-**MANDATORY**: At the start of every session, perform these steps:
+| Error | Cause | Solution |
+|-------|-------|----------|
+| \`Asset hasn't been opted in\` | Missing opt-in | Opt in to asset first |
+| \`Overspend\` | Fee + amount > balance | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
+| \`Insufficient balance\` | Not enough ALGO or ASA | **STOP** — check balance with \`wallet_get_info\`, inform user (see below) |
+| \`Spending limit exceeded\` | Transaction exceeds wallet allowance or daily limit | Inform user, adjust spending limits |
 
-1. **Check wallet**: Call \`wallet_get_info\` to verify wallet is configured and retrieve the account address
-2. **If wallet error**: Inform the user that wallet configuration is missing and retry verification
-3. **Present to user**: Display available balance, address, and common asset reference table
+
+> **CRITICAL — Overspend / Insufficient Balance**: If a transaction or swap fails due to overspending, insufficient balance, or negative balance errors, **DO NOT continue or retry**. Immediately call \`wallet_get_info\` to check the current balance, then inform the user of the shortfall (required amount vs. available balance including MBR and fees). Do not attempt alternative amounts or re-submit — wait for the user to fund the account or confirm next steps.
 
 ## Pre-Transaction Validation Checklist
 
@@ -119,59 +99,6 @@ Before ANY transaction, validate these requirements:
 | \`keyreg\` | Consensus key registration | \`make_keyreg_txn\` |
 
 
-## Common Workflows
-
-### Send ALGO Payment
-\`\`\`
-1. wallet_get_info → get sender address and balance
-2. make_payment_txn → create payment transaction
-3. wallet_sign_transaction → sign with wallet
-4. send_raw_transaction → submit to network
-5. api_indexer_lookup_transaction_by_id → verify result (optional)
-\`\`\`
-
-### Asset Opt-In (Quick)
-\`\`\`
-1. wallet_get_info → verify wallet
-2. wallet_optin_asset → one-step opt-in (builds, signs, submits)
-\`\`\`
-
-### Asset Transfer
-\`\`\`
-1. wallet_get_info → get sender address
-2. pera_asset_verification_status → verify asset legitimacy (warn if suspicious)
-3. api_algod_get_account_asset_info → check sender balance
-4. api_algod_get_account_asset_info → verify recipient opted in
-5. make_asset_transfer_txn → create transfer transaction
-6. wallet_sign_transaction → sign with wallet
-7. send_raw_transaction → submit to network
-\`\`\`
-
-### Asset Opt-Out
-\`\`\`
-1. Get asset info to find creator address
-2. make_asset_transfer_txn with amount=0, receiver=creator, closeRemainderTo=creator
-3. wallet_sign_transaction → sign
-4. send_raw_transaction → submit
-\`\`\`
-
-### Atomic Transaction Group
-\`\`\`
-1. Create multiple transactions with make_*_txn tools
-2. assign_group_id → group them atomically
-3. wallet_sign_transaction_group → sign the group
-4. send_raw_transaction → submit the group
-\`\`\`
-
-### Create an ASA (Algorand Standard Asset)
-\`\`\`
-1. wallet_get_info → verify wallet and balance
-2. make_asset_create_txn
-3. wallet_sign_transaction → sign
-4. send_raw_transaction → submit
-5. api_algod_get_pending_transaction → get the new ASA ID from "asset-index" field
-\`\`\`
-
 ### Pera Asset Verification
 \`\`\`
 // Check if an asset is verified (mainnet only)
@@ -188,6 +115,7 @@ pera_verified_asset_search
 \`\`\`
 
 ### NFD Lookup
+**CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
 \`\`\`
 // Look up an NFD name
 api_nfd_get_nfd { nameOrID: "example.algo", view: "full", network: "mainnet" }
@@ -208,8 +136,6 @@ api_nfd_get_nfds_for_addresses {
 2. Extract depositAccount from response
 3. Use depositAccount as transaction recipient
 \`\`\`
-
-**Always verify asset IDs before transactions — scam tokens may use similar names.** Use \`pera_asset_verification_status\` to check verification tier (verified, trusted, suspicious, unverified).
 
 ## Amounts and Decimals
 
