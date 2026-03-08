@@ -24,6 +24,11 @@ interface IndexerSearchStructuredContent {
   indexerSearch: IndexerSearchData;
 }
 
+// Filter/sort state
+let currentSearchData: IndexerSearchData | null = null;
+let isFilterQuery = "";
+let isSortOrder = "default";
+
 function truncate(value: string): string {
   if (value.length <= 12) return value;
   return `${value.slice(0, 6)}...${value.slice(-6)}`;
@@ -49,13 +54,15 @@ function renderQueryBadges(query: Record<string, any>): string {
   return badges.length > 0 ? `<div class="is-queries">${badges.join("")}</div>` : "";
 }
 
-function renderAccountsTable(results: any[]): string {
-  const rows = results.map((acct, i) => {
+function renderAccountsTableRows(results: any[]): string {
+  let rows = "";
+  for (let i = 0; i < results.length; i++) {
+    const acct = results[i];
     const addr = truncate(acct.address || "");
     const balance = formatAlgo(acct.amount ?? 0);
     const status = acct.status || "Offline";
     const rowClass = i % 2 === 1 ? " is-row-alt" : "";
-    return `
+    rows += `
       <tr class="is-row${rowClass}">
         <td class="is-cell is-mono" title="${acct.address || ""}">${addr}</td>
         <td class="is-cell is-right">${balance}</td>
@@ -63,11 +70,14 @@ function renderAccountsTable(results: any[]): string {
         <td class="is-cell"><button class="allo-link" data-url="https://allo.info/account/${acct.address}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
-  }).join("");
+  }
+  return rows;
+}
 
+function renderAccountsTable(results: any[]): string {
   return `
     <div class="is-table-wrap">
-      <table class="is-table">
+      <table class="is-table" id="is-table">
         <thead>
           <tr class="is-thead-row">
             <th class="is-th">Address</th>
@@ -76,20 +86,22 @@ function renderAccountsTable(results: any[]): string {
             <th class="is-th"></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${renderAccountsTableRows(results)}</tbody>
       </table>
     </div>
   `;
 }
 
-function renderTransactionsTable(results: any[]): string {
-  const rows = results.map((txn, i) => {
+function renderTransactionsTableRows(results: any[]): string {
+  let rows = "";
+  for (let i = 0; i < results.length; i++) {
+    const txn = results[i];
     const txId = truncate(txn.id || "");
     const txType = txn["tx-type"] || txn.type || "-";
     const sender = truncate(txn.sender || "");
     const round = txn["confirmed-round"] ?? txn.round ?? "-";
     const rowClass = i % 2 === 1 ? " is-row-alt" : "";
-    return `
+    rows += `
       <tr class="is-row${rowClass}">
         <td class="is-cell is-mono" title="${txn.id || ""}">${txId}</td>
         <td class="is-cell">${txType}</td>
@@ -98,11 +110,14 @@ function renderTransactionsTable(results: any[]): string {
         <td class="is-cell"><button class="allo-link" data-url="https://allo.info/tx/${txn.id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
-  }).join("");
+  }
+  return rows;
+}
 
+function renderTransactionsTable(results: any[]): string {
   return `
     <div class="is-table-wrap">
-      <table class="is-table">
+      <table class="is-table" id="is-table">
         <thead>
           <tr class="is-thead-row">
             <th class="is-th">TX ID</th>
@@ -112,20 +127,22 @@ function renderTransactionsTable(results: any[]): string {
             <th class="is-th"></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${renderTransactionsTableRows(results)}</tbody>
       </table>
     </div>
   `;
 }
 
-function renderAssetsTable(results: any[]): string {
-  const rows = results.map((asset, i) => {
+function renderAssetsTableRows(results: any[]): string {
+  let rows = "";
+  for (let i = 0; i < results.length; i++) {
+    const asset = results[i];
     const id = asset.index ?? asset.id ?? "-";
     const name = asset.params?.name || "Unnamed";
     const unitName = asset.params?.["unit-name"] || "-";
     const creator = truncate(asset.params?.creator || "");
     const rowClass = i % 2 === 1 ? " is-row-alt" : "";
-    return `
+    rows += `
       <tr class="is-row${rowClass}">
         <td class="is-cell is-mono">${id}</td>
         <td class="is-cell">${name}</td>
@@ -134,11 +151,14 @@ function renderAssetsTable(results: any[]): string {
         <td class="is-cell"><button class="allo-link" data-url="https://allo.info/asset/${id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
-  }).join("");
+  }
+  return rows;
+}
 
+function renderAssetsTable(results: any[]): string {
   return `
     <div class="is-table-wrap">
-      <table class="is-table">
+      <table class="is-table" id="is-table">
         <thead>
           <tr class="is-thead-row">
             <th class="is-th">Asset ID</th>
@@ -148,19 +168,21 @@ function renderAssetsTable(results: any[]): string {
             <th class="is-th"></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${renderAssetsTableRows(results)}</tbody>
       </table>
     </div>
   `;
 }
 
-function renderApplicationsTable(results: any[]): string {
-  const rows = results.map((appEntry, i) => {
+function renderApplicationsTableRows(results: any[]): string {
+  let rows = "";
+  for (let i = 0; i < results.length; i++) {
+    const appEntry = results[i];
     const id = appEntry.id ?? "-";
     const creator = truncate(appEntry.params?.creator || "");
     const globalStateCount = appEntry.params?.["global-state"]?.length ?? 0;
     const rowClass = i % 2 === 1 ? " is-row-alt" : "";
-    return `
+    rows += `
       <tr class="is-row${rowClass}">
         <td class="is-cell is-mono">${id}</td>
         <td class="is-cell is-mono" title="${appEntry.params?.creator || ""}">${creator}</td>
@@ -168,11 +190,14 @@ function renderApplicationsTable(results: any[]): string {
         <td class="is-cell"><button class="allo-link" data-url="https://allo.info/application/${id}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
-  }).join("");
+  }
+  return rows;
+}
 
+function renderApplicationsTable(results: any[]): string {
   return `
     <div class="is-table-wrap">
-      <table class="is-table">
+      <table class="is-table" id="is-table">
         <thead>
           <tr class="is-thead-row">
             <th class="is-th">App ID</th>
@@ -181,7 +206,7 @@ function renderApplicationsTable(results: any[]): string {
             <th class="is-th"></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${renderApplicationsTableRows(results)}</tbody>
       </table>
     </div>
   `;
@@ -199,6 +224,111 @@ function renderTableForType(type: SearchType, results: any[]): string {
       return renderApplicationsTable(results);
     default:
       return `<div class="is-empty">Unknown search type.</div>`;
+  }
+}
+
+function buildFilterBar(type: SearchType): string {
+  let sortOptions = "";
+  if (type === "accounts") {
+    sortOptions = `
+      <option value="default"${isSortOrder === "default" ? " selected" : ""}>Default</option>
+      <option value="balance-desc"${isSortOrder === "balance-desc" ? " selected" : ""}>Balance (high)</option>
+      <option value="balance-asc"${isSortOrder === "balance-asc" ? " selected" : ""}>Balance (low)</option>
+    `;
+  } else if (type === "transactions") {
+    sortOptions = `
+      <option value="default"${isSortOrder === "default" ? " selected" : ""}>Default</option>
+      <option value="round-desc"${isSortOrder === "round-desc" ? " selected" : ""}>Newest first</option>
+      <option value="round-asc"${isSortOrder === "round-asc" ? " selected" : ""}>Oldest first</option>
+    `;
+  } else if (type === "assets") {
+    sortOptions = `
+      <option value="default"${isSortOrder === "default" ? " selected" : ""}>Default</option>
+      <option value="id-asc"${isSortOrder === "id-asc" ? " selected" : ""}>ID (low)</option>
+      <option value="id-desc"${isSortOrder === "id-desc" ? " selected" : ""}>ID (high)</option>
+      <option value="name-asc"${isSortOrder === "name-asc" ? " selected" : ""}>Name (A-Z)</option>
+    `;
+  } else if (type === "applications") {
+    sortOptions = `
+      <option value="default"${isSortOrder === "default" ? " selected" : ""}>Default</option>
+      <option value="id-asc"${isSortOrder === "id-asc" ? " selected" : ""}>ID (low)</option>
+      <option value="id-desc"${isSortOrder === "id-desc" ? " selected" : ""}>ID (high)</option>
+    `;
+  }
+
+  return `
+    <div class="list-controls">
+      <input type="text" class="list-filter-input" id="is-filter" placeholder="Filter results..." value="${isFilterQuery}">
+      <select class="list-sort-select" id="is-sort">
+        ${sortOptions}
+      </select>
+    </div>
+  `;
+}
+
+function applyIsFilters() {
+  if (!currentSearchData) return;
+  const type = currentSearchData.type;
+  let filtered = currentSearchData.results.slice();
+
+  if (isFilterQuery) {
+    const q = isFilterQuery.toLowerCase();
+    if (type === "accounts") {
+      filtered = filtered.filter((acct: any) => (acct.address || "").toLowerCase().includes(q));
+    } else if (type === "transactions") {
+      filtered = filtered.filter((txn: any) =>
+        (txn.id || "").toLowerCase().includes(q) || (txn.sender || "").toLowerCase().includes(q)
+      );
+    } else if (type === "assets") {
+      filtered = filtered.filter((asset: any) => {
+        const name = (asset.params?.name || "").toLowerCase();
+        const unit = (asset.params?.["unit-name"] || "").toLowerCase();
+        return name.includes(q) || unit.includes(q);
+      });
+    } else if (type === "applications") {
+      filtered = filtered.filter((app: any) =>
+        String(app.id ?? "").includes(q) || (app.params?.creator || "").toLowerCase().includes(q)
+      );
+    }
+  }
+
+  if (isSortOrder !== "default") {
+    if (type === "accounts") {
+      if (isSortOrder === "balance-desc") {
+        filtered.sort((a: any, b: any) => (b.amount ?? 0) - (a.amount ?? 0));
+      } else if (isSortOrder === "balance-asc") {
+        filtered.sort((a: any, b: any) => (a.amount ?? 0) - (b.amount ?? 0));
+      }
+    } else if (type === "transactions") {
+      if (isSortOrder === "round-desc") {
+        filtered.sort((a: any, b: any) => (b["confirmed-round"] ?? b.round ?? 0) - (a["confirmed-round"] ?? a.round ?? 0));
+      } else if (isSortOrder === "round-asc") {
+        filtered.sort((a: any, b: any) => (a["confirmed-round"] ?? a.round ?? 0) - (b["confirmed-round"] ?? b.round ?? 0));
+      }
+    } else if (type === "assets") {
+      if (isSortOrder === "id-asc") {
+        filtered.sort((a: any, b: any) => (a.index ?? 0) - (b.index ?? 0));
+      } else if (isSortOrder === "id-desc") {
+        filtered.sort((a: any, b: any) => (b.index ?? 0) - (a.index ?? 0));
+      } else if (isSortOrder === "name-asc") {
+        filtered.sort((a: any, b: any) => (a.params?.name || "").localeCompare(b.params?.name || ""));
+      }
+    } else if (type === "applications") {
+      if (isSortOrder === "id-asc") {
+        filtered.sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0));
+      } else if (isSortOrder === "id-desc") {
+        filtered.sort((a: any, b: any) => (b.id ?? 0) - (a.id ?? 0));
+      }
+    }
+  }
+
+  const tableArea = root.querySelector("#is-table-area");
+  if (!tableArea) return;
+
+  if (filtered.length > 0) {
+    tableArea.innerHTML = renderTableForType(type, filtered);
+  } else {
+    tableArea.innerHTML = `<div class="is-empty">No ${type} match the current filter.</div>`;
   }
 }
 
@@ -222,7 +352,10 @@ function renderSearchResults(data: IndexerSearchData): string {
         <div class="is-header-count">${data.totalResults} result${data.totalResults !== 1 ? "s" : ""} found</div>
         ${queryBadges}
       </div>
-      ${bodyHtml}
+      ${buildFilterBar(data.type)}
+      <div id="is-table-area">
+        ${bodyHtml}
+      </div>
       ${nextTokenHtml}
     </div>
   `;
@@ -244,6 +377,27 @@ function renderError(message: string): string {
       <div class="is-error-text">${message}</div>
     </div>
   `;
+}
+
+function attachIsFilterHandlers() {
+  const filterInput = root.querySelector("#is-filter") as HTMLInputElement | null;
+  const sortSelect = root.querySelector("#is-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = isFilterQuery;
+    filterInput.addEventListener("input", () => {
+      isFilterQuery = filterInput.value;
+      applyIsFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = isSortOrder;
+    sortSelect.addEventListener("change", () => {
+      isSortOrder = sortSelect.value;
+      applyIsFilters();
+    });
+  }
 }
 
 // --- App lifecycle ---
@@ -275,6 +429,9 @@ document.addEventListener("click", (e) => {
 });
 
 app.ontoolinput = () => {
+  isFilterQuery = "";
+  isSortOrder = "default";
+  currentSearchData = null;
   root.innerHTML = renderLoading();
 };
 
@@ -285,7 +442,9 @@ app.ontoolinputpartial = () => {
 app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as IndexerSearchStructuredContent | undefined;
   if (sc?.indexerSearch) {
+    currentSearchData = sc.indexerSearch;
     root.innerHTML = renderSearchResults(sc.indexerSearch);
+    attachIsFilterHandlers();
   } else {
     root.innerHTML = renderError("No indexer search results returned.");
   }

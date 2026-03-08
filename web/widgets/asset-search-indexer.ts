@@ -42,6 +42,11 @@ interface AssetSearchIndexerStructuredContent {
   assetSearch: AssetSearchData;
 }
 
+// Filter/sort state
+let originalAssets: AssetEntry[] = [];
+let asiFilterQuery = "";
+let asiSortOrder = "id-asc";
+
 function truncateAddress(addr: string): string {
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
@@ -72,15 +77,20 @@ function renderFilterBadges(filters: AssetSearchFilters): string {
   return badges.length > 0 ? `<div class="asi-filters">${badges.join("")}</div>` : "";
 }
 
-function renderTable(assets: AssetEntry[]): string {
-  const rows = assets.map((asset, i) => {
+function renderAssetTableRows(assets: AssetEntry[]): string {
+  if (assets.length === 0) {
+    return `<tr><td colspan="6" class="asi-empty-cell">No assets match the current filter.</td></tr>`;
+  }
+  let rows = "";
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
     const name = asset.params.name || "Unnamed";
     const unit = asset.params["unit-name"] || "-";
     const supply = formatSupply(asset.params.total, asset.params.decimals);
     const creator = truncateAddress(asset.params.creator);
     const rowClass = i % 2 === 1 ? " asi-row-alt" : "";
 
-    return `
+    rows += `
       <tr class="asi-row${rowClass}">
         <td class="asi-cell asi-mono">${asset.index}</td>
         <td class="asi-cell">${name}</td>
@@ -90,11 +100,14 @@ function renderTable(assets: AssetEntry[]): string {
         <td class="asi-cell asi-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${asset.index}" title="View on allo.info">${ALLO_SVG}</button></td>
       </tr>
     `;
-  }).join("");
+  }
+  return rows;
+}
 
+function renderTable(assets: AssetEntry[]): string {
   return `
     <div class="asi-table-wrap">
-      <table class="asi-table">
+      <table class="asi-table" id="asi-table">
         <thead>
           <tr class="asi-thead-row">
             <th class="asi-th">ID</th>
@@ -106,11 +119,42 @@ function renderTable(assets: AssetEntry[]): string {
           </tr>
         </thead>
         <tbody>
-          ${rows}
+          ${renderAssetTableRows(assets)}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function applyAsiFilters() {
+  let filtered = originalAssets.slice();
+
+  if (asiFilterQuery) {
+    const q = asiFilterQuery.toLowerCase();
+    filtered = filtered.filter((asset) => {
+      const name = (asset.params.name || "").toLowerCase();
+      const unit = (asset.params["unit-name"] || "").toLowerCase();
+      return name.includes(q) || unit.includes(q);
+    });
+  }
+
+  if (asiSortOrder === "id-asc") {
+    filtered.sort((a, b) => a.index - b.index);
+  } else if (asiSortOrder === "id-desc") {
+    filtered.sort((a, b) => b.index - a.index);
+  } else if (asiSortOrder === "name-asc") {
+    filtered.sort((a, b) => (a.params.name || "").localeCompare(b.params.name || ""));
+  } else if (asiSortOrder === "name-desc") {
+    filtered.sort((a, b) => (b.params.name || "").localeCompare(a.params.name || ""));
+  } else if (asiSortOrder === "supply-desc") {
+    filtered.sort((a, b) => b.params.total - a.params.total);
+  } else if (asiSortOrder === "supply-asc") {
+    filtered.sort((a, b) => a.params.total - b.params.total);
+  }
+
+  const tbody = root.querySelector("#asi-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = renderAssetTableRows(filtered);
 }
 
 function renderSearchResults(data: AssetSearchData): string {
@@ -130,6 +174,17 @@ function renderSearchResults(data: AssetSearchData): string {
         <div class="asi-header-label">Asset Search Results</div>
         <div class="asi-header-count">${data.totalAssets} asset${data.totalAssets !== 1 ? "s" : ""} found</div>
         ${filterBadges}
+      </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="asi-filter" placeholder="Filter by name or unit..." value="${asiFilterQuery}">
+        <select class="list-sort-select" id="asi-sort">
+          <option value="id-asc"${asiSortOrder === "id-asc" ? " selected" : ""}>ID (low &rarr; high)</option>
+          <option value="id-desc"${asiSortOrder === "id-desc" ? " selected" : ""}>ID (high &rarr; low)</option>
+          <option value="name-asc"${asiSortOrder === "name-asc" ? " selected" : ""}>Name (A-Z)</option>
+          <option value="name-desc"${asiSortOrder === "name-desc" ? " selected" : ""}>Name (Z-A)</option>
+          <option value="supply-desc"${asiSortOrder === "supply-desc" ? " selected" : ""}>Supply (high &rarr; low)</option>
+          <option value="supply-asc"${asiSortOrder === "supply-asc" ? " selected" : ""}>Supply (low &rarr; high)</option>
+        </select>
       </div>
       ${bodyHtml}
       ${nextTokenHtml}
@@ -153,6 +208,27 @@ function renderError(message: string): string {
       <div class="asi-error-text">${message}</div>
     </div>
   `;
+}
+
+function attachAsiFilterHandlers() {
+  const filterInput = root.querySelector("#asi-filter") as HTMLInputElement | null;
+  const sortSelect = root.querySelector("#asi-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = asiFilterQuery;
+    filterInput.addEventListener("input", () => {
+      asiFilterQuery = filterInput.value;
+      applyAsiFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = asiSortOrder;
+    sortSelect.addEventListener("change", () => {
+      asiSortOrder = sortSelect.value;
+      applyAsiFilters();
+    });
+  }
 }
 
 // --- App lifecycle ---
@@ -185,6 +261,8 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { name?: string; unit?: string } | undefined;
+  asiFilterQuery = "";
+  asiSortOrder = "id-asc";
   root.innerHTML = renderLoading(args?.name || args?.unit);
 };
 
@@ -198,7 +276,9 @@ app.ontoolinputpartial = (params) => {
 app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as AssetSearchIndexerStructuredContent | undefined;
   if (sc?.assetSearch) {
+    originalAssets = sc.assetSearch.assets;
     root.innerHTML = renderSearchResults(sc.assetSearch);
+    attachAsiFilterHandlers();
   } else {
     root.innerHTML = renderError("No asset search results returned.");
   }

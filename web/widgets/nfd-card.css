@@ -200,7 +200,7 @@ body {
   letter-spacing: 0.3px;
 }
 
-/* Social links */
+/* Social buttons */
 .nfd-socials {
   display: flex;
   gap: 8px;
@@ -208,15 +208,72 @@ body {
   margin-bottom: 16px;
 }
 
-.social-link {
+.social-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  font-weight: 500;
-  color: #0ea5e9;
-  background: rgba(14, 165, 233, 0.08);
-  padding: 4px 10px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.social-btn:active {
+  transform: scale(0.96);
+}
+
+.social-twitter {
+  color: #fff;
+  background: #000;
+}
+.social-twitter:hover {
+  background: #333;
+}
+
+.social-linkedin {
+  color: #fff;
+  background: #0a66c2;
+}
+.social-linkedin:hover {
+  background: #0855a0;
+}
+
+.social-discord {
+  color: #fff;
+  background: #5865f2;
+}
+.social-discord:hover {
+  background: #4752c4;
+}
+
+.social-website {
+  color: var(--color-text-primary, #1a1a2e);
+  background: var(--color-background-secondary, #f1f5f9);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+}
+.social-website:hover {
+  background: var(--color-background-tertiary, #e2e8f0);
+}
+
+/* Clickable detail rows */
+.nfd-clickable {
+  cursor: pointer;
+}
+.nfd-clickable:hover {
+  background: var(--color-background-secondary, #f8fafc);
   border-radius: 8px;
-  text-decoration: none;
-  cursor: default;
+}
+
+.nfd-link {
+  color: #0ea5e9;
 }
 
 /* Assets section */

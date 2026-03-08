@@ -18,6 +18,6 @@ export function registerAlgodApiTools(server: McpServer, env: Env, assets?: Asse
   registerAccountApiTools(server, env, assets);
   // registerApplicationApiTools(server, env);
   registerAssetApiTools(server, env, assets);
-  registerTransactionApiTools(server, env);
+  registerTransactionApiTools(server, env, assets);
   registerStatsTools(server, env, assets);
 }

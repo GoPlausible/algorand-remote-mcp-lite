@@ -35,6 +35,12 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		name: "Algorand Remote MCP Lite",
 		version: "1.9.1",
 		description: "Algorand Remote MCP Lite (aka Wallet Edition) for interacting with the Algorand blockchain. Use algorand_mcp_skill tool at start of each session to learn how to interact and operate Algorand Remote MCP Lite.",
+		websiteUrl: "https://goplausible.com",
+		icons: [{
+			src: "https://goplausible.com/favicon.ico",
+			mimeType: "image/x-icon",
+			sizes: ["64x64"]
+		}]
 	});
 
 	// Initialize state with default values

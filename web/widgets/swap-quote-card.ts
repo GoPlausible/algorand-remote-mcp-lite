@@ -44,7 +44,9 @@ function getAssetName(asaId: number): string {
 
 function formatAmount(raw: string, asaId: number): string {
   const known = KNOWN_ASSETS[asaId];
-  if (!known) return BigInt(raw).toLocaleString();
+  if (!known) {
+    try { return BigInt(Math.round(Number(raw))).toLocaleString(); } catch { return String(raw ?? "0"); }
+  }
   const divisor = 10 ** known.decimals;
   const num = Number(raw) / divisor;
   return num.toLocaleString(undefined, {
@@ -58,6 +60,7 @@ function formatUsd(value: number): string {
 }
 
 function getPriceImpactClass(impact: number): string {
+  if (impact == null || Number.isNaN(Number(impact))) return "impact-low";
   const abs = Math.abs(impact);
   if (abs < 1) return "impact-low";
   if (abs <= 3) return "impact-medium";
@@ -65,11 +68,12 @@ function getPriceImpactClass(impact: number): string {
 }
 
 function formatPriceImpact(impact: number): string {
+  if (impact == null || Number.isNaN(Number(impact))) return "N/A";
   return `${impact >= 0 ? "+" : ""}${impact.toFixed(3)}%`;
 }
 
 function extractRouteSteps(flattenedRoute: any[]): string[] {
-  if (!flattenedRoute || flattenedRoute.length === 0) return [];
+  if (!Array.isArray(flattenedRoute) || flattenedRoute.length === 0) return [];
   const protocols: string[] = [];
   for (const step of flattenedRoute) {
     const name = step.protocolName || step.protocol || step.name || "Unknown DEX";
@@ -106,10 +110,14 @@ function renderSwapQuoteCard(data: SwapQuoteData): string {
       </div>`
     : "";
 
-  const feesHtml = data.protocolFees
-    ? `<div class="swap-detail-row">
+  const feesHtml = data.protocolFees && typeof data.protocolFees === "object"
+    ? `<div class="swap-detail-row swap-detail-row-fees">
         <span class="swap-detail-label">Protocol Fees</span>
-        <span class="swap-detail-value">${typeof data.protocolFees === "object" ? JSON.stringify(data.protocolFees) : data.protocolFees}</span>
+        <div class="swap-fee-badges">
+          ${Object.entries(data.protocolFees as Record<string, unknown>).map(([dex, fee], i) =>
+            `<span class="swap-fee-badge swap-fee-badge-${i % 6}">${dex}: ${fee}</span>`
+          ).join("")}
+        </div>
       </div>`
     : "";
 
@@ -233,7 +241,12 @@ app.ontoolinputpartial = (params) => {
 app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as SwapQuoteStructuredContent | undefined;
   if (sc?.swapQuote) {
-    root.innerHTML = renderSwapQuoteCard(sc.swapQuote);
+    try {
+      root.innerHTML = renderSwapQuoteCard(sc.swapQuote);
+    } catch (e) {
+      console.error("Render error:", e);
+      root.innerHTML = renderError("Failed to display swap quote.");
+    }
   } else {
     root.innerHTML = renderError("No swap quote data returned.");
   }

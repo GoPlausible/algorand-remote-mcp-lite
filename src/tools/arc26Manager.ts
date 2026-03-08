@@ -403,7 +403,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
               uriType,
               uri,
               qrCodeLink,
-              qrImageUrl: `https://goplausible.xyz/api/arc26/image/${uuid}.jpeg`,
+              qrImageData: qrCode,
               address,
               amount,
               assetId,

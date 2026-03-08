@@ -16,7 +16,7 @@ interface ReceiptData {
   txId: string;
   note?: string;
   receiptLink: string;
-  qrImageUrl?: string;
+  qrImageData?: string;
   createdAt: string;
 }
 
@@ -93,14 +93,13 @@ function renderReceiptCard(data: ReceiptData): string {
     </div>`
     : "";
 
-  const qrImageSection = data.qrImageUrl
+  const qrImageSection = data.qrImageData
     ? `<div class="rc-image-section">
         <img
           class="rc-image"
-          src="${data.qrImageUrl}"
+          src="data:image/jpeg;base64,${data.qrImageData}"
           alt="Receipt QR Code"
           loading="eager"
-          crossorigin="anonymous"
         />
       </div>`
     : "";

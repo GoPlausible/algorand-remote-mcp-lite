@@ -135,6 +135,15 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
   // Get account application information (commented out)
   // ...
 
+  // Register account asset holding widget
+  const assetHoldingResourceUri = 'ui://algod/account-asset-holding.html';
+  registerWidget(server, assets, {
+    name: 'account-asset-holding-widget',
+    htmlPath: '/widgets/account-asset-holding.html',
+    resourceUri: assetHoldingResourceUri,
+    description: 'Asset holding card showing amount, frozen status, and explorer links',
+  });
+
   // Get account asset information
   server.registerTool(
     'algod_get_account_asset_info',
@@ -143,6 +152,10 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
       inputSchema: {
         address: z.string().describe('The account public key'),
         assetId: z.number().int().describe('The asset ID')
+      },
+      _meta: {
+        ui: { resourceUri: assetHoldingResourceUri },
+        'ui/resourceUri': assetHoldingResourceUri,
       },
     },
     async ({ address, assetId }) => {
@@ -171,7 +184,25 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
         // Get account asset information
         const response = await algodClient.accountAssetInformation(String(address), Number(assetId)).do();
 
-        return ResponseProcessor.processResponse(response);
+        const holding = (response as any)?.['asset-holding'] ?? (response as any)?.assetHolding ?? response as any;
+        const assetHolding = {
+          address: String(address),
+          assetId: Number(assetId),
+          amount: Number(holding?.amount ?? 0),
+          isFrozen: Boolean(holding?.['is-frozen'] ?? holding?.isFrozen ?? false),
+        };
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(response);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify(assetHolding);
+        } catch {
+          textContent = JSON.stringify(assetHolding);
+        }
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { structuredData: true, assetHolding },
+        };
       } catch (error: any) {
         return {
           content: [{

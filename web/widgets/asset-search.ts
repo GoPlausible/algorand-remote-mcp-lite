@@ -44,6 +44,12 @@ let currentQuery: string | null = null;
 let currentData: SearchResultsData | null = null;
 let isLoadingPage = false;
 
+// Filter/sort state
+let originalAssets: AssetResult[] = [];
+let asFilterQuery = "";
+let asSortOrder = "default";
+let asVerifFilter = "";
+
 function generatePageToken(page: number): string {
   return btoa(`page_${page}`);
 }
@@ -84,6 +90,44 @@ function renderAssetRow(asset: AssetResult): string {
   `;
 }
 
+function applyAsFilters() {
+  let filtered = originalAssets.slice();
+
+  if (asFilterQuery) {
+    const q = asFilterQuery.toLowerCase();
+    filtered = filtered.filter((asset) => {
+      return (asset.name || "").toLowerCase().includes(q) ||
+        (asset.unit_name || "").toLowerCase().includes(q) ||
+        String(asset.asset_id).includes(q);
+    });
+  }
+
+  if (asVerifFilter) {
+    filtered = filtered.filter((asset) => asset.verification_tier.toLowerCase() === asVerifFilter);
+  }
+
+  if (asSortOrder === "name-asc") {
+    filtered.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  } else if (asSortOrder === "name-desc") {
+    filtered.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
+  } else if (asSortOrder === "id-asc") {
+    filtered.sort((a, b) => a.asset_id - b.asset_id);
+  }
+
+  const listEl = root.querySelector("#as-results-list");
+  if (!listEl) return;
+
+  if (filtered.length > 0) {
+    let html = "";
+    for (const asset of filtered) {
+      html += renderAssetRow(asset);
+    }
+    listEl.innerHTML = html;
+  } else {
+    listEl.innerHTML = `<div class="as-empty-filter">No assets match the current filter.</div>`;
+  }
+}
+
 function renderSearchResults(data: SearchResultsData): string {
   const pagination = data.pagination;
   const paginationHtml = pagination ? `
@@ -110,6 +154,21 @@ function renderSearchResults(data: SearchResultsData): string {
         <div class="as-header-title">"${data.query}"</div>
         <div class="as-header-count">${data.totalResults} asset${data.totalResults !== 1 ? "s" : ""} found</div>
       </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="as-local-filter" placeholder="Filter results..." value="${asFilterQuery}">
+        <select class="list-sort-select" id="as-verif-filter">
+          <option value=""${asVerifFilter === "" ? " selected" : ""}>All tiers</option>
+          <option value="verified"${asVerifFilter === "verified" ? " selected" : ""}>Verified</option>
+          <option value="trusted"${asVerifFilter === "trusted" ? " selected" : ""}>Trusted</option>
+          <option value="unverified"${asVerifFilter === "unverified" ? " selected" : ""}>Unverified</option>
+        </select>
+        <select class="list-sort-select" id="as-sort">
+          <option value="default"${asSortOrder === "default" ? " selected" : ""}>Default order</option>
+          <option value="name-asc"${asSortOrder === "name-asc" ? " selected" : ""}>Name (A-Z)</option>
+          <option value="name-desc"${asSortOrder === "name-desc" ? " selected" : ""}>Name (Z-A)</option>
+          <option value="id-asc"${asSortOrder === "id-asc" ? " selected" : ""}>ID (low &rarr; high)</option>
+        </select>
+      </div>
       ${resultsHtml}
       ${paginationHtml}
     </div>
@@ -132,6 +191,36 @@ function renderError(message: string): string {
       <div class="as-error-text">${message}</div>
     </div>
   `;
+}
+
+function attachAsFilterHandlers() {
+  const filterInput = root.querySelector("#as-local-filter") as HTMLInputElement | null;
+  const verifSelect = root.querySelector("#as-verif-filter") as HTMLSelectElement | null;
+  const sortSelect = root.querySelector("#as-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = asFilterQuery;
+    filterInput.addEventListener("input", () => {
+      asFilterQuery = filterInput.value;
+      applyAsFilters();
+    });
+  }
+
+  if (verifSelect) {
+    verifSelect.value = asVerifFilter;
+    verifSelect.addEventListener("change", () => {
+      asVerifFilter = verifSelect.value;
+      applyAsFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = asSortOrder;
+    sortSelect.addEventListener("change", () => {
+      asSortOrder = sortSelect.value;
+      applyAsFilters();
+    });
+  }
 }
 
 function attachEventHandlers(data: SearchResultsData) {
@@ -185,8 +274,13 @@ async function loadPage(page: number) {
     const sc = result.structuredContent as AssetSearchStructuredContent | undefined;
     if (sc?.searchResults) {
       currentData = sc.searchResults;
+      originalAssets = sc.searchResults.assets;
+      asFilterQuery = "";
+      asVerifFilter = "";
+      asSortOrder = "default";
       root.innerHTML = renderSearchResults(sc.searchResults);
       attachEventHandlers(sc.searchResults);
+      attachAsFilterHandlers();
     }
   } catch (err: any) {
     console.error("Failed to load page:", err);
@@ -194,6 +288,7 @@ async function loadPage(page: number) {
     if (currentData) {
       root.innerHTML = renderSearchResults(currentData);
       attachEventHandlers(currentData);
+      attachAsFilterHandlers();
     }
   } finally {
     isLoadingPage = false;
@@ -230,6 +325,9 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { query?: string } | undefined;
+  asFilterQuery = "";
+  asSortOrder = "default";
+  asVerifFilter = "";
   root.innerHTML = renderLoading(args?.query);
 };
 
@@ -245,8 +343,10 @@ app.ontoolresult = (result: CallToolResult) => {
   if (sc?.searchResults) {
     currentQuery = sc.searchResults.query;
     currentData = sc.searchResults;
+    originalAssets = sc.searchResults.assets;
     root.innerHTML = renderSearchResults(sc.searchResults);
     attachEventHandlers(sc.searchResults);
+    attachAsFilterHandlers();
   } else {
     root.innerHTML = renderError("No asset search results returned.");
   }

@@ -34,6 +34,11 @@ interface NfdListStructuredContent {
   totalNfds?: number;
 }
 
+// Filter/sort state
+let originalNfds: NfdEntry[] = [];
+let nlFilterQuery = "";
+let nlSortOrder = "name-asc";
+
 function truncateAddress(addr: string): string {
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
@@ -91,9 +96,39 @@ function renderNfdItem(nfd: NfdEntry): string {
   `;
 }
 
+function renderNfdItems(nfds: NfdEntry[]): string {
+  if (nfds.length === 0) {
+    return '<div class="nl-empty">No NFDs match the current filter.</div>';
+  }
+  let html = "";
+  for (const nfd of nfds) {
+    html += renderNfdItem(nfd);
+  }
+  return html;
+}
+
+function applyNlFilters() {
+  let filtered = originalNfds.slice();
+
+  if (nlFilterQuery) {
+    const q = nlFilterQuery.toLowerCase();
+    filtered = filtered.filter((nfd) => nfd.name.toLowerCase().includes(q));
+  }
+
+  if (nlSortOrder === "name-asc") {
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (nlSortOrder === "name-desc") {
+    filtered.sort((a, b) => b.name.localeCompare(a.name));
+  }
+
+  const listEl = root.querySelector("#nl-list");
+  if (!listEl) return;
+  listEl.innerHTML = renderNfdItems(filtered);
+}
+
 function renderNfdList(data: NfdListData): string {
   const nfdRows = data.nfds.length > 0
-    ? data.nfds.map((nfd) => renderNfdItem(nfd)).join("")
+    ? renderNfdItems(data.nfds)
     : '<div class="nl-empty">No NFDs found for this address.</div>';
 
   return `
@@ -107,7 +142,14 @@ function renderNfdList(data: NfdListData): string {
           <span class="nl-address" title="${data.address}">${truncateAddress(data.address)}</span>
         </div>
       </div>
-      <div class="nl-list">
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="nl-filter" placeholder="Filter by name..." value="${nlFilterQuery}">
+        <select class="list-sort-select" id="nl-sort">
+          <option value="name-asc"${nlSortOrder === "name-asc" ? " selected" : ""}>Name (A-Z)</option>
+          <option value="name-desc"${nlSortOrder === "name-desc" ? " selected" : ""}>Name (Z-A)</option>
+        </select>
+      </div>
+      <div class="nl-list" id="nl-list">
         ${nfdRows}
       </div>
     </div>
@@ -130,6 +172,27 @@ function renderError(message: string): string {
       <div class="error-text">${message}</div>
     </div>
   `;
+}
+
+function attachNlFilterHandlers() {
+  const filterInput = root.querySelector("#nl-filter") as HTMLInputElement | null;
+  const sortSelect = root.querySelector("#nl-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = nlFilterQuery;
+    filterInput.addEventListener("input", () => {
+      nlFilterQuery = filterInput.value;
+      applyNlFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = nlSortOrder;
+    sortSelect.addEventListener("change", () => {
+      nlSortOrder = sortSelect.value;
+      applyNlFilters();
+    });
+  }
 }
 
 // --- App lifecycle ---
@@ -162,6 +225,8 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;
+  nlFilterQuery = "";
+  nlSortOrder = "name-asc";
   root.innerHTML = renderLoading(args?.address);
 };
 
@@ -177,7 +242,9 @@ app.ontoolresult = (result: CallToolResult) => {
   if (sc) {
     const data = extractData(sc);
     if (data) {
+      originalNfds = data.nfds;
       root.innerHTML = renderNfdList(data);
+      attachNlFilterHandlers();
       return;
     }
   }

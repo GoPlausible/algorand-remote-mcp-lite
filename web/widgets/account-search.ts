@@ -34,6 +34,11 @@ interface AccountSearchStructuredContent {
   accountSearch: AccountSearchData;
 }
 
+// Filter/sort state
+let originalAccounts: AccountResult[] = [];
+let acsStatusFilter = "";
+let acsSortOrder = "balance-desc";
+
 function truncateAddress(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
@@ -101,13 +106,51 @@ function renderAccountRow(account: AccountResult, index: number): string {
   `;
 }
 
+function renderAccountRows(accounts: AccountResult[]): string {
+  if (accounts.length === 0) {
+    return `<tr><td colspan="5" class="acs-empty-cell">No accounts match the current filter.</td></tr>`;
+  }
+  let html = "";
+  for (let i = 0; i < accounts.length; i++) {
+    html += renderAccountRow(accounts[i], i);
+  }
+  return html;
+}
+
+function applyAcsFilters() {
+  let filtered = originalAccounts.slice();
+
+  if (acsStatusFilter) {
+    filtered = filtered.filter((acct) => {
+      const s = (acct.status || "").toLowerCase();
+      return s === acsStatusFilter;
+    });
+  }
+
+  if (acsSortOrder === "balance-desc") {
+    filtered.sort((a, b) => b.amount - a.amount);
+  } else if (acsSortOrder === "balance-asc") {
+    filtered.sort((a, b) => a.amount - b.amount);
+  } else if (acsSortOrder === "assets-desc") {
+    filtered.sort((a, b) => (b.totalAssetsOptedIn ?? 0) - (a.totalAssetsOptedIn ?? 0));
+  } else if (acsSortOrder === "assets-asc") {
+    filtered.sort((a, b) => (a.totalAssetsOptedIn ?? 0) - (b.totalAssetsOptedIn ?? 0));
+  }
+
+  const tbody = root.querySelector("#acs-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = renderAccountRows(filtered);
+
+  attachCopyHandlers();
+}
+
 function renderSearchResults(data: AccountSearchData): string {
   const filterHtml = renderFilterBadges(data.filters);
 
   const tableHtml = data.accounts.length > 0
     ? `
       <div class="acs-table-wrap">
-        <table class="acs-table">
+        <table class="acs-table" id="acs-table">
           <thead>
             <tr>
               <th class="acs-th">Address</th>
@@ -118,7 +161,7 @@ function renderSearchResults(data: AccountSearchData): string {
             </tr>
           </thead>
           <tbody>
-            ${data.accounts.map((a, i) => renderAccountRow(a, i)).join("")}
+            ${renderAccountRows(data.accounts)}
           </tbody>
         </table>
       </div>`
@@ -130,6 +173,19 @@ function renderSearchResults(data: AccountSearchData): string {
         <div class="acs-header-label">Account Search Results</div>
         <div class="acs-header-count">${data.totalAccounts} account${data.totalAccounts !== 1 ? "s" : ""} found</div>
         ${filterHtml}
+      </div>
+      <div class="list-controls">
+        <select class="list-sort-select" id="acs-status-filter">
+          <option value=""${acsStatusFilter === "" ? " selected" : ""}>All status</option>
+          <option value="online"${acsStatusFilter === "online" ? " selected" : ""}>Online</option>
+          <option value="offline"${acsStatusFilter === "offline" ? " selected" : ""}>Offline</option>
+        </select>
+        <select class="list-sort-select" id="acs-sort">
+          <option value="balance-desc"${acsSortOrder === "balance-desc" ? " selected" : ""}>Balance (high &rarr; low)</option>
+          <option value="balance-asc"${acsSortOrder === "balance-asc" ? " selected" : ""}>Balance (low &rarr; high)</option>
+          <option value="assets-desc"${acsSortOrder === "assets-desc" ? " selected" : ""}>Assets opted in (most)</option>
+          <option value="assets-asc"${acsSortOrder === "assets-asc" ? " selected" : ""}>Assets opted in (least)</option>
+        </select>
       </div>
       ${tableHtml}
     </div>
@@ -154,13 +210,40 @@ function renderError(message: string): string {
   `;
 }
 
-function attachEventHandlers() {
-  root.querySelectorAll<HTMLButtonElement>(".acs-copy-btn").forEach((btn) => {
+function attachCopyHandlers() {
+  const btns = root.querySelectorAll<HTMLButtonElement>(".acs-copy-btn");
+  for (const btn of Array.from(btns)) {
     btn.addEventListener("click", () => {
       const address = btn.getAttribute("data-address");
       if (address) copyToClipboard(address, btn);
     });
-  });
+  }
+}
+
+function attachAcsFilterHandlers() {
+  const statusSelect = root.querySelector("#acs-status-filter") as HTMLSelectElement | null;
+  const sortSelect = root.querySelector("#acs-sort") as HTMLSelectElement | null;
+
+  if (statusSelect) {
+    statusSelect.value = acsStatusFilter;
+    statusSelect.addEventListener("change", () => {
+      acsStatusFilter = statusSelect.value;
+      applyAcsFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = acsSortOrder;
+    sortSelect.addEventListener("change", () => {
+      acsSortOrder = sortSelect.value;
+      applyAcsFilters();
+    });
+  }
+}
+
+function attachEventHandlers() {
+  attachCopyHandlers();
+  attachAcsFilterHandlers();
 }
 
 // --- App lifecycle ---
@@ -192,6 +275,8 @@ document.addEventListener("click", (e) => {
 });
 
 app.ontoolinput = () => {
+  acsStatusFilter = "";
+  acsSortOrder = "balance-desc";
   root.innerHTML = renderLoading();
 };
 
@@ -202,6 +287,7 @@ app.ontoolinputpartial = () => {
 app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as AccountSearchStructuredContent | undefined;
   if (sc?.accountSearch) {
+    originalAccounts = sc.accountSearch.accounts;
     root.innerHTML = renderSearchResults(sc.accountSearch);
     attachEventHandlers();
   } else {

@@ -32,6 +32,7 @@ interface NfdAccountData {
   website: string | null;
   twitter: string | null;
   discord: string | null;
+  linkedin: string | null;
 }
 
 interface NfdStructuredContent {
@@ -75,6 +76,59 @@ function generatePageToken(page: number): string {
   return btoa(`page_${page}`);
 }
 
+function twitterUrl(handle: string): string {
+  const clean = handle.replace(/^@/, "");
+  return `https://x.com/${clean}`;
+}
+
+function websiteUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function buildSocialButtons(data: NfdAccountData): string {
+  const buttons: string[] = [];
+  if (data.twitter) {
+    const label = data.twitter.replace(/^@/, "");
+    buttons.push(
+      `<button class="social-btn social-twitter" data-url="${twitterUrl(data.twitter)}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.741l7.73-8.835L1.254 2.25H8.08l4.259 5.636 5.905-5.636zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        @${label}
+      </button>`
+    );
+  }
+  if (data.linkedin) {
+    const clean = data.linkedin.replace(/^\/in\//i, "");
+    buttons.push(
+      `<button class="social-btn social-linkedin" data-url="https://linkedin.com/in/${clean}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        ${clean}
+      </button>`
+    );
+  }
+  if (data.discord) {
+    buttons.push(
+      `<button class="social-btn social-discord" data-url="https://discord.com">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/></svg>
+        ${data.discord}
+      </button>`
+    );
+  }
+  if (data.website) {
+    const url = websiteUrl(data.website);
+    let label = data.website.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+    if (label.length > 28) label = `${label.slice(0, 26)}…`;
+    buttons.push(
+      `<button class="social-btn social-website" data-url="${url}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        ${label}
+      </button>`
+    );
+  }
+  return buttons.length
+    ? `<div class="nfd-socials">${buttons.join("")}</div>`
+    : "";
+}
+
 function renderNfdCard(data: NfdAccountData): string {
   const algoBalance = formatAlgo(data.amount);
   const totalAssets = data.totalAssets ?? data.assets?.length ?? 0;
@@ -82,10 +136,7 @@ function renderNfdCard(data: NfdAccountData): string {
     ? `<img class="nfd-avatar-img" src="${data.avatar}" alt="${data.nfdName}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="nfd-avatar-fallback" style="display:none">${data.nfdName.charAt(0).toUpperCase()}</div>`
     : `<div class="nfd-avatar-fallback">${data.nfdName.charAt(0).toUpperCase()}</div>`;
 
-  const socialLinks: string[] = [];
-  if (data.twitter) socialLinks.push(`<a class="social-link" title="Twitter">@${data.twitter}</a>`);
-  if (data.discord) socialLinks.push(`<a class="social-link" title="Discord">${data.discord}</a>`);
-  if (data.website) socialLinks.push(`<a class="social-link" title="Website">${data.website}</a>`);
+  const socialsHtml = buildSocialButtons(data);
 
   const tagsHtml = data.tags?.length
     ? `<div class="nfd-tags">${data.tags.map((t) => `<span class="nfd-tag">${t}</span>`).join("")}</div>`
@@ -105,6 +156,9 @@ function renderNfdCard(data: NfdAccountData): string {
           </button>
         </div>` : "";
 
+  // Sort assets descending by amount (most balance first)
+  const sortedAssets = [...(data.assets ?? [])].sort((a, b) => b.amount - a.amount);
+
   return `
     <div class="nfd-card">
       <div class="nfd-hero">
@@ -121,6 +175,8 @@ function renderNfdCard(data: NfdAccountData): string {
 
       ${tagsHtml}
 
+      ${socialsHtml}
+
       <div class="nfd-balance-section">
         <div class="nfd-balance-label">Balance</div>
         <div class="nfd-balance-value">
@@ -130,14 +186,14 @@ function renderNfdCard(data: NfdAccountData): string {
       </div>
 
       <div class="nfd-details">
-        <div class="nfd-detail-row">
+        <div class="nfd-detail-row nfd-clickable" data-url="https://allo.info/address/${data.address}">
           <span class="nfd-detail-label">Address</span>
-          <span class="nfd-detail-value nfd-address" title="${data.address}">${truncateAddress(data.address)}</span>
+          <span class="nfd-detail-value nfd-address nfd-link" title="${data.address}">${truncateAddress(data.address)} ↗</span>
         </div>
         ${data.owner && data.owner !== data.address ? `
-        <div class="nfd-detail-row">
+        <div class="nfd-detail-row nfd-clickable" data-url="https://allo.info/address/${data.owner}">
           <span class="nfd-detail-label">Owner</span>
-          <span class="nfd-detail-value nfd-address" title="${data.owner}">${truncateAddress(data.owner)}</span>
+          <span class="nfd-detail-value nfd-address nfd-link" title="${data.owner}">${truncateAddress(data.owner)} ↗</span>
         </div>` : ""}
         <div class="nfd-detail-row">
           <span class="nfd-detail-label">Assets</span>
@@ -145,19 +201,17 @@ function renderNfdCard(data: NfdAccountData): string {
         </div>
       </div>
 
-      ${socialLinks.length ? `<div class="nfd-socials">${socialLinks.join("")}</div>` : ""}
-
-      ${data.showAssets && data.assets.length > 0 ? `
+      ${data.showAssets && sortedAssets.length > 0 ? `
       <div class="nfd-assets-section">
         <div class="nfd-assets-header">
           <span class="nfd-assets-title">Assets (${totalAssets})</span>
         </div>
         <div class="nfd-assets-list" id="nfd-assets-list">
-          ${data.assets
+          ${sortedAssets
             .filter((a) => a.amount > 0)
             .map((a) => `
-              <div class="nfd-asset-row">
-                <span class="nfd-asset-id">ASA ${a.assetId}</span>
+              <div class="nfd-asset-row nfd-clickable" data-url="https://allo.info/asset/${a.assetId}">
+                <span class="nfd-asset-id">ASA ${a.assetId} ↗</span>
                 <span class="nfd-asset-amount">${formatAssetAmount(a.amount, a.assetId)}</span>
               </div>
             `).join("")}
@@ -195,6 +249,14 @@ function renderError(message: string): string {
 }
 
 function attachEventHandlers(data: NfdAccountData) {
+  // Social buttons and clickable rows — open external links
+  for (const el of root.querySelectorAll<HTMLElement>(".social-btn, .nfd-clickable")) {
+    const url = el.dataset.url;
+    if (url) {
+      el.addEventListener("click", () => { app.openLink(url); });
+    }
+  }
+
   // Copy button
   const copyBtn = root.querySelector(".nfd-copy-btn") as HTMLButtonElement | null;
   if (copyBtn) {

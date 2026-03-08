@@ -12,7 +12,7 @@ interface QrData {
   uriType: string;
   uri: string;
   qrCodeLink: string;
-  qrImageUrl?: string;
+  qrImageData?: string;
   address: string;
   amount?: number;
   assetId?: number;
@@ -75,14 +75,13 @@ function renderQrCard(data: QrData): string {
       </div>`
     : "";
 
-  const qrImageSection = data.qrImageUrl
+  const qrImageSection = data.qrImageData
     ? `<div class="qr-image-section">
         <img
           class="qr-image"
-          src="${data.qrImageUrl}"
+          src="data:image/jpeg;base64,${data.qrImageData}"
           alt="ARC-26 QR Code"
           loading="eager"
-          crossorigin="anonymous"
         />
       </div>`
     : `<div class="qr-link-section">

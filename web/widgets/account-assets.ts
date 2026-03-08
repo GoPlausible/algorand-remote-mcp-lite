@@ -32,6 +32,11 @@ interface AccountAssetsStructuredContent {
   nextToken?: string | null;
 }
 
+// Filter/sort state
+let originalAssets: AccountAsset[] = [];
+let aaFilterQuery = "";
+let aaSortOrder = "id-asc";
+
 function truncateAddress(addr: string): string {
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
@@ -50,22 +55,55 @@ function extractData(sc: AccountAssetsStructuredContent): AccountAssetsData | nu
   return null;
 }
 
+function renderAssetRows(assets: AccountAsset[]): string {
+  if (assets.length === 0) {
+    return `<tr><td colspan="4" class="aa-empty">No assets match the current filter.</td></tr>`;
+  }
+  let html = "";
+  for (let index = 0; index < assets.length; index++) {
+    const asset = assets[index];
+    const frozenHtml = asset.isFrozen
+      ? '<span class="aa-frozen-badge aa-frozen-yes">Frozen</span>'
+      : '<span class="aa-frozen-badge aa-frozen-no">--</span>';
+
+    html += `
+      <tr class="aa-table-row${index % 2 === 1 ? " aa-row-alt" : ""}">
+        <td class="aa-cell aa-cell-id">${String(asset.assetId)}</td>
+        <td class="aa-cell aa-cell-amount">${String(asset.amount)}</td>
+        <td class="aa-cell aa-cell-frozen">${frozenHtml}</td>
+        <td class="aa-cell aa-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${String(asset.assetId)}" title="View on allo.info">${ALLO_SVG}</button></td>
+      </tr>
+    `;
+  }
+  return html;
+}
+
+function applyAaFilters() {
+  let filtered = originalAssets.slice();
+
+  if (aaFilterQuery) {
+    const q = aaFilterQuery.toLowerCase();
+    filtered = filtered.filter((asset) => String(asset.assetId).includes(q));
+  }
+
+  if (aaSortOrder === "id-asc") {
+    filtered.sort((a, b) => (Number(a.assetId) - Number(b.assetId)));
+  } else if (aaSortOrder === "id-desc") {
+    filtered.sort((a, b) => (Number(b.assetId) - Number(a.assetId)));
+  } else if (aaSortOrder === "amount-desc") {
+    filtered.sort((a, b) => (Number(b.amount) - Number(a.amount)));
+  } else if (aaSortOrder === "amount-asc") {
+    filtered.sort((a, b) => (Number(a.amount) - Number(b.amount)));
+  }
+
+  const tbody = root.querySelector("#aa-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = renderAssetRows(filtered);
+}
+
 function renderAccountAssets(data: AccountAssetsData): string {
   const assetRows = data.assets.length > 0
-    ? data.assets.map((asset, index) => {
-        const frozenHtml = asset.isFrozen
-          ? '<span class="aa-frozen-badge aa-frozen-yes">Frozen</span>'
-          : '<span class="aa-frozen-badge aa-frozen-no">--</span>';
-
-        return `
-          <tr class="aa-table-row${index % 2 === 1 ? " aa-row-alt" : ""}">
-            <td class="aa-cell aa-cell-id">${String(asset.assetId)}</td>
-            <td class="aa-cell aa-cell-amount">${String(asset.amount)}</td>
-            <td class="aa-cell aa-cell-frozen">${frozenHtml}</td>
-            <td class="aa-cell aa-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${String(asset.assetId)}" title="View on allo.info">${ALLO_SVG}</button></td>
-          </tr>
-        `;
-      }).join("")
+    ? renderAssetRows(data.assets)
     : `<tr><td colspan="4" class="aa-empty">No assets found for this account.</td></tr>`;
 
   return `
@@ -79,8 +117,17 @@ function renderAccountAssets(data: AccountAssetsData): string {
           <span class="aa-address" title="${data.address}">${truncateAddress(data.address)}</span>
         </div>
       </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="aa-filter" placeholder="Filter by Asset ID..." value="${aaFilterQuery}">
+        <select class="list-sort-select" id="aa-sort">
+          <option value="id-asc"${aaSortOrder === "id-asc" ? " selected" : ""}>ID (low &rarr; high)</option>
+          <option value="id-desc"${aaSortOrder === "id-desc" ? " selected" : ""}>ID (high &rarr; low)</option>
+          <option value="amount-desc"${aaSortOrder === "amount-desc" ? " selected" : ""}>Amount (high &rarr; low)</option>
+          <option value="amount-asc"${aaSortOrder === "amount-asc" ? " selected" : ""}>Amount (low &rarr; high)</option>
+        </select>
+      </div>
       <div class="aa-table-wrapper">
-        <table class="aa-table">
+        <table class="aa-table" id="aa-table">
           <thead>
             <tr class="aa-table-head-row">
               <th class="aa-th">Asset ID</th>
@@ -117,6 +164,27 @@ function renderError(message: string): string {
   `;
 }
 
+function attachAaFilterHandlers() {
+  const filterInput = root.querySelector("#aa-filter") as HTMLInputElement | null;
+  const sortSelect = root.querySelector("#aa-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = aaFilterQuery;
+    filterInput.addEventListener("input", () => {
+      aaFilterQuery = filterInput.value;
+      applyAaFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = aaSortOrder;
+    sortSelect.addEventListener("change", () => {
+      aaSortOrder = sortSelect.value;
+      applyAaFilters();
+    });
+  }
+}
+
 // --- App lifecycle ---
 
 const root = document.getElementById("root")!;
@@ -147,6 +215,8 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;
+  aaFilterQuery = "";
+  aaSortOrder = "id-asc";
   root.innerHTML = renderLoading(args?.address);
 };
 
@@ -162,7 +232,9 @@ app.ontoolresult = (result: CallToolResult) => {
   if (sc) {
     const data = extractData(sc);
     if (data) {
+      originalAssets = data.assets;
       root.innerHTML = renderAccountAssets(data);
+      attachAaFilterHandlers();
       return;
     }
   }

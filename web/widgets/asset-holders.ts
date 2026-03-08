@@ -32,6 +32,12 @@ interface AssetHoldersStructuredContent {
   nextToken?: string | null;
 }
 
+// Filter/sort state
+let originalBalances: BalanceEntry[] = [];
+let ahFilterQuery = "";
+let ahFrozenFilter = "";
+let ahSortOrder = "amount-desc";
+
 function truncateAddress(addr: string): string {
   if (addr.length <= 16) return addr;
   return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
@@ -64,11 +70,14 @@ function copyToClipboard(text: string, btn: HTMLElement) {
   });
 }
 
-function renderHoldersTable(data: AssetHoldersData): string {
-  const rows = data.balances.length > 0
-    ? data.balances
-        .map(
-          (entry, idx) => `
+function renderBalanceRows(balances: BalanceEntry[]): string {
+  if (balances.length === 0) {
+    return `<tr><td class="ah-empty" colspan="4">No holders match the current filter.</td></tr>`;
+  }
+  let html = "";
+  for (let idx = 0; idx < balances.length; idx++) {
+    const entry = balances[idx];
+    html += `
       <tr class="ah-row${idx % 2 === 1 ? " ah-row-alt" : ""}">
         <td class="ah-cell ah-cell-address">
           <span class="ah-address" title="${entry.address}">${truncateAddress(entry.address)}</span>
@@ -84,10 +93,42 @@ function renderHoldersTable(data: AssetHoldersData): string {
           ${entry.isFrozen ? '<span class="ah-frozen-badge ah-frozen-yes">Frozen</span>' : '<span class="ah-frozen-badge ah-frozen-no">No</span>'}
         </td>
         <td class="ah-cell ah-cell-allo"><button class="allo-link" data-url="https://allo.info/account/${entry.address}" title="View on allo.info">${ALLO_SVG}</button></td>
-      </tr>`
-        )
-        .join("")
-    : `<tr><td class="ah-empty" colspan="4">No holders found.</td></tr>`;
+      </tr>`;
+  }
+  return html;
+}
+
+function applyAhFilters() {
+  let filtered = originalBalances.slice();
+
+  if (ahFilterQuery) {
+    const q = ahFilterQuery.toLowerCase();
+    filtered = filtered.filter((entry) => entry.address.toLowerCase().includes(q));
+  }
+
+  if (ahFrozenFilter === "frozen") {
+    filtered = filtered.filter((entry) => entry.isFrozen);
+  } else if (ahFrozenFilter === "active") {
+    filtered = filtered.filter((entry) => !entry.isFrozen);
+  }
+
+  if (ahSortOrder === "amount-desc") {
+    filtered.sort((a, b) => (a.amount > b.amount ? -1 : 1));
+  } else if (ahSortOrder === "amount-asc") {
+    filtered.sort((a, b) => (a.amount > b.amount ? 1 : -1));
+  } else if (ahSortOrder === "addr-asc") {
+    filtered.sort((a, b) => a.address.localeCompare(b.address));
+  }
+
+  const tbody = root.querySelector("#ah-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = renderBalanceRows(filtered);
+
+  attachCopyHandlers();
+}
+
+function renderHoldersTable(data: AssetHoldersData): string {
+  const rows = renderBalanceRows(data.balances);
 
   return `
     <div class="ah-card">
@@ -97,8 +138,21 @@ function renderHoldersTable(data: AssetHoldersData): string {
           <span class="ah-count">${data.totalHolders.toLocaleString()} holder${data.totalHolders !== 1 ? "s" : ""}</span>
         </div>
       </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="ah-filter" placeholder="Filter by address..." value="${ahFilterQuery}">
+        <select class="list-sort-select" id="ah-frozen-filter">
+          <option value=""${ahFrozenFilter === "" ? " selected" : ""}>All</option>
+          <option value="frozen"${ahFrozenFilter === "frozen" ? " selected" : ""}>Frozen only</option>
+          <option value="active"${ahFrozenFilter === "active" ? " selected" : ""}>Active only</option>
+        </select>
+        <select class="list-sort-select" id="ah-sort">
+          <option value="amount-desc"${ahSortOrder === "amount-desc" ? " selected" : ""}>Amount (high)</option>
+          <option value="amount-asc"${ahSortOrder === "amount-asc" ? " selected" : ""}>Amount (low)</option>
+          <option value="addr-asc"${ahSortOrder === "addr-asc" ? " selected" : ""}>Address (A-Z)</option>
+        </select>
+      </div>
       <div class="ah-table-wrap">
-        <table class="ah-table">
+        <table class="ah-table" id="ah-table">
           <thead>
             <tr>
               <th class="ah-th">Address</th>
@@ -134,16 +188,51 @@ function renderError(message: string): string {
   `;
 }
 
-function attachEventHandlers() {
+function attachCopyHandlers() {
   const copyBtns = root.querySelectorAll(".ah-copy-btn");
-  copyBtns.forEach((btn) => {
+  for (const btn of Array.from(copyBtns)) {
     btn.addEventListener("click", () => {
       const address = (btn as HTMLElement).dataset.address;
       if (address) {
         copyToClipboard(address, btn as HTMLElement);
       }
     });
-  });
+  }
+}
+
+function attachAhFilterHandlers() {
+  const filterInput = root.querySelector("#ah-filter") as HTMLInputElement | null;
+  const frozenSelect = root.querySelector("#ah-frozen-filter") as HTMLSelectElement | null;
+  const sortSelect = root.querySelector("#ah-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = ahFilterQuery;
+    filterInput.addEventListener("input", () => {
+      ahFilterQuery = filterInput.value;
+      applyAhFilters();
+    });
+  }
+
+  if (frozenSelect) {
+    frozenSelect.value = ahFrozenFilter;
+    frozenSelect.addEventListener("change", () => {
+      ahFrozenFilter = frozenSelect.value;
+      applyAhFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = ahSortOrder;
+    sortSelect.addEventListener("change", () => {
+      ahSortOrder = sortSelect.value;
+      applyAhFilters();
+    });
+  }
+}
+
+function attachEventHandlers() {
+  attachCopyHandlers();
+  attachAhFilterHandlers();
 }
 
 // --- App lifecycle ---
@@ -176,6 +265,9 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { assetId?: number } | undefined;
+  ahFilterQuery = "";
+  ahFrozenFilter = "";
+  ahSortOrder = "amount-desc";
   root.innerHTML = renderLoading(args?.assetId);
 };
 
@@ -191,6 +283,7 @@ app.ontoolresult = (result: CallToolResult) => {
   if (sc) {
     const data = extractData(sc);
     if (data) {
+      originalBalances = data.balances;
       root.innerHTML = renderHoldersTable(data);
       attachEventHandlers();
       return;

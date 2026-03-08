@@ -333,7 +333,7 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
               txId,
               note,
               receiptLink,
-              qrImageUrl: `https://goplausible.xyz/api/receipt/image/${uuid}.jpeg`,
+              qrImageData: qrCode,
               createdAt: new Date().toISOString(),
             }
           },

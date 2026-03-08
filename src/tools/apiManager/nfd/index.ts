@@ -32,7 +32,7 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
       description: 'Get NFD domain information by name, including the linked Algorand account balance and assets',
       inputSchema: {
         name: z.string().describe('NFD domain name, e.g. "example.algo"'),
-        view: z.enum(['brief', 'full']).optional().default('full').describe('View type - brief or full'),
+        view: z.enum(['brief', 'full']).default('full').describe('View type - brief or full (defaults to full)'),
         includeSales: z.boolean().optional().default(false).describe('Include sales data'),
         pageToken: z.string().optional().describe('Pagination token for paginated results')
       },
@@ -48,9 +48,7 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         let url = `${apiBase}/nfd/${encodeURIComponent(name.toLowerCase())}`;
         const params = new URLSearchParams();
 
-        if (view) {
-          params.append('view', view);
-        }
+        params.append('view', view ?? 'full');
 
         if (includeSales) {
           params.append('includeSales', 'true');
@@ -134,11 +132,14 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
           category: nfdData.category || null,
           state: nfdData.state || null,
           owner: nfdData.owner || null,
-          tags: (nfdData.metaTags || nfdData.tags || []) as string[],
+          tags: ((nfdData.metaTags || nfdData.tags || []) as string[]).filter(
+            (t: string) => !/^\d+chars?$/i.test(t) && !/^pristine$/i.test(t)
+          ),
           bio: userDefined.bio || null,
           website: userDefined.website || verified.website || null,
           twitter: userDefined.twitter || verified.twitter || null,
           discord: userDefined.discord || verified.discord || null,
+          linkedin: userDefined.linkedin || verified.linkedin || null,
         };
 
         const combinedData = { ...nfdData, account: { address: depositAddress, amount: accountAmount, assets: accountAssets } };

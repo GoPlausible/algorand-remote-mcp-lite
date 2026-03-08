@@ -45,6 +45,11 @@ let allTransactions: Transaction[] = [];
 let currentNextToken: string | null = null;
 let isLoadingMore = false;
 
+// Filter/sort state
+let txnFilterQuery = "";
+let txnTypeFilter = "";
+let txnSortOrder = "newest";
+
 const TYPE_LABELS: Record<string, string> = {
   pay: "Payment",
   axfer: "Asset Transfer",
@@ -171,6 +176,49 @@ function renderTxnRow(txn: Transaction, address: string): string {
   `;
 }
 
+function applyTxnFilters() {
+  const address = currentAddress || "";
+  let filtered = allTransactions.slice();
+
+  if (txnTypeFilter) {
+    filtered = filtered.filter((txn) => txn.type === txnTypeFilter);
+  }
+
+  if (txnFilterQuery) {
+    const q = txnFilterQuery.toLowerCase();
+    filtered = filtered.filter((txn) => {
+      if (txn.id.toLowerCase().includes(q)) return true;
+      if (txn.sender.toLowerCase().includes(q)) return true;
+      if (txn.paymentTransaction?.receiver.toLowerCase().includes(q)) return true;
+      if (txn.assetTransferTransaction?.receiver.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }
+
+  if (txnSortOrder === "newest") {
+    filtered.sort((a, b) => b.roundTime - a.roundTime);
+  } else if (txnSortOrder === "oldest") {
+    filtered.sort((a, b) => a.roundTime - b.roundTime);
+  } else if (txnSortOrder === "fee-high") {
+    filtered.sort((a, b) => b.fee - a.fee);
+  } else if (txnSortOrder === "fee-low") {
+    filtered.sort((a, b) => a.fee - b.fee);
+  }
+
+  const listEl = root.querySelector("#txn-list");
+  if (!listEl) return;
+
+  if (filtered.length > 0) {
+    let html = "";
+    for (const txn of filtered) {
+      html += renderTxnRow(txn, address);
+    }
+    listEl.innerHTML = html;
+  } else {
+    listEl.innerHTML = '<div class="txn-empty">No transactions match the current filter.</div>';
+  }
+}
+
 function renderTxnHistory(address: string, transactions: Transaction[], nextToken: string | null): string {
   const loadMoreHtml = nextToken
     ? `
@@ -197,6 +245,24 @@ function renderTxnHistory(address: string, transactions: Transaction[], nextToke
           <span class="txn-address" title="${address}">${truncateAddress(address)}</span>
         </div>
       </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="txn-filter" placeholder="Filter by address or TX ID..." value="${txnFilterQuery}">
+        <select class="list-sort-select" id="txn-type-filter">
+          <option value=""${txnTypeFilter === "" ? " selected" : ""}>All types</option>
+          <option value="pay"${txnTypeFilter === "pay" ? " selected" : ""}>Payment</option>
+          <option value="axfer"${txnTypeFilter === "axfer" ? " selected" : ""}>Asset Transfer</option>
+          <option value="appl"${txnTypeFilter === "appl" ? " selected" : ""}>App Call</option>
+          <option value="acfg"${txnTypeFilter === "acfg" ? " selected" : ""}>Asset Config</option>
+          <option value="afrz"${txnTypeFilter === "afrz" ? " selected" : ""}>Asset Freeze</option>
+          <option value="keyreg"${txnTypeFilter === "keyreg" ? " selected" : ""}>Key Reg</option>
+        </select>
+        <select class="list-sort-select" id="txn-sort">
+          <option value="newest"${txnSortOrder === "newest" ? " selected" : ""}>Newest first</option>
+          <option value="oldest"${txnSortOrder === "oldest" ? " selected" : ""}>Oldest first</option>
+          <option value="fee-high"${txnSortOrder === "fee-high" ? " selected" : ""}>Fee (high)</option>
+          <option value="fee-low"${txnSortOrder === "fee-low" ? " selected" : ""}>Fee (low)</option>
+        </select>
+      </div>
       <div class="txn-list" id="txn-list">
         ${txnRows}
       </div>
@@ -221,6 +287,36 @@ function renderError(message: string): string {
       <div class="error-text">${message}</div>
     </div>
   `;
+}
+
+function attachFilterHandlers() {
+  const filterInput = root.querySelector("#txn-filter") as HTMLInputElement | null;
+  const typeSelect = root.querySelector("#txn-type-filter") as HTMLSelectElement | null;
+  const sortSelect = root.querySelector("#txn-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = txnFilterQuery;
+    filterInput.addEventListener("input", () => {
+      txnFilterQuery = filterInput.value;
+      applyTxnFilters();
+    });
+  }
+
+  if (typeSelect) {
+    typeSelect.value = txnTypeFilter;
+    typeSelect.addEventListener("change", () => {
+      txnTypeFilter = typeSelect.value;
+      applyTxnFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = txnSortOrder;
+    sortSelect.addEventListener("change", () => {
+      txnSortOrder = sortSelect.value;
+      applyTxnFilters();
+    });
+  }
 }
 
 function attachLoadMoreHandler() {
@@ -264,16 +360,19 @@ async function loadMoreTransactions() {
         currentNextToken = data.indexerNextToken;
         root.innerHTML = renderTxnHistory(currentAddress!, allTransactions, currentNextToken);
         attachLoadMoreHandler();
+        attachFilterHandlers();
         return;
       }
     }
     // Restore on failure
     root.innerHTML = renderTxnHistory(currentAddress!, allTransactions, currentNextToken);
     attachLoadMoreHandler();
+    attachFilterHandlers();
   } catch (err: any) {
     console.error("Failed to load more transactions:", err);
     root.innerHTML = renderTxnHistory(currentAddress!, allTransactions, currentNextToken);
     attachLoadMoreHandler();
+    attachFilterHandlers();
   } finally {
     isLoadingMore = false;
   }
@@ -309,6 +408,9 @@ document.addEventListener("click", (e) => {
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { address?: string } | undefined;
+  txnFilterQuery = "";
+  txnTypeFilter = "";
+  txnSortOrder = "newest";
   root.innerHTML = renderLoading(args?.address);
 };
 
@@ -329,6 +431,7 @@ app.ontoolresult = (result: CallToolResult) => {
       currentNextToken = data.indexerNextToken;
       root.innerHTML = renderTxnHistory(data.address, allTransactions, currentNextToken);
       attachLoadMoreHandler();
+      attachFilterHandlers();
       return;
     }
   }
