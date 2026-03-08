@@ -333,6 +333,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
     htmlPath: '/widgets/qr-code.html',
     resourceUri: qrCodeResourceUri,
     description: 'Interactive QR code display UI widget',
+    resourceDomains: ['goplausible.xyz'],
   });
 
   server.registerTool(
@@ -402,6 +403,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
               uriType,
               uri,
               qrCodeLink,
+              qrImageUrl: `https://goplausible.xyz/api/arc26/image/${uuid}.jpeg`,
               address,
               amount,
               assetId,

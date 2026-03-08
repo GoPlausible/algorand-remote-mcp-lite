@@ -72,7 +72,23 @@ body {
   background: rgba(168, 85, 247, 0.5);
 }
 
-/* QR link section */
+/* QR image display */
+.qr-image-section {
+  display: flex;
+  justify-content: center;
+  padding: 20px 24px 12px;
+}
+
+.qr-image {
+  width: 220px;
+  height: 220px;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  background: #fff;
+}
+
+/* QR link section (fallback when no image) */
 .qr-link-section {
   display: flex;
   justify-content: center;
@@ -108,30 +124,18 @@ body {
   transform: scale(0.98);
 }
 
-/* URI section */
-.qr-uri-section {
-  padding: 0 24px 16px;
-}
-
-.qr-uri-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-text-secondary, #64748b);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.qr-uri-value {
-  font-size: 11px;
+/* Inline URI in detail rows */
+.qr-uri-inline {
   font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  font-size: 11px;
   color: var(--color-text-secondary, #64748b);
-  background: var(--color-background-secondary, #f8fafc);
-  border: 1px solid var(--color-border-primary, #e2e8f0);
-  border-radius: 8px;
-  padding: 10px 12px;
-  word-break: break-all;
-  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+  flex: 1;
+  text-align: right;
+  margin-left: 8px;
 }
 
 /* Details */
@@ -220,15 +224,21 @@ body {
   transform: scale(0.9);
 }
 
+/* Footer actions row */
+.qr-footer-actions {
+  display: flex;
+  gap: 10px;
+  margin: 0 24px 24px;
+}
+
 /* Copy URI button */
 .qr-copy-btn {
-  width: calc(100% - 48px);
-  margin: 0 24px 24px;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 14px;
   background: var(--color-background-secondary, #f1f5f9);
   color: var(--color-text-primary, #1a1a2e);
   border: 1px solid var(--color-border-primary, #e2e8f0);
@@ -245,6 +255,34 @@ body {
 }
 
 .qr-copy-btn:active {
+  transform: scale(0.98);
+}
+
+/* Full page link button */
+.qr-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--color-text-secondary, #64748b);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.qr-page-btn:hover {
+  background: var(--color-background-secondary, #f1f5f9);
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.qr-page-btn:active {
   transform: scale(0.98);
 }
 

@@ -42,6 +42,22 @@ body {
   opacity: 0.8;
 }
 
+/* QR image display */
+.rc-image-section {
+  display: flex;
+  justify-content: center;
+  padding: 20px 24px 4px;
+}
+
+.rc-image {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  background: #fff;
+}
+
 /* Body */
 .rc-body {
   padding: 24px;
@@ -219,17 +235,20 @@ body {
   flex: 1;
 }
 
-/* View receipt button */
+/* View receipt button (secondary) */
 .rc-view-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, #047857, #059669);
-  color: white;
-  border: none;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--color-text-secondary, #475569);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
   border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   appearance: none;
   transition: all 0.15s ease;
@@ -240,7 +259,8 @@ body {
 }
 
 .rc-view-btn:hover {
-  filter: brightness(1.1);
+  background: var(--color-background-secondary, #f8fafc);
+  color: var(--color-text-primary, #1a1a2e);
 }
 
 .rc-view-btn:active {

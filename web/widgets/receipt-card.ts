@@ -16,6 +16,7 @@ interface ReceiptData {
   txId: string;
   note?: string;
   receiptLink: string;
+  qrImageUrl?: string;
   createdAt: string;
 }
 
@@ -92,12 +93,26 @@ function renderReceiptCard(data: ReceiptData): string {
     </div>`
     : "";
 
+  const qrImageSection = data.qrImageUrl
+    ? `<div class="rc-image-section">
+        <img
+          class="rc-image"
+          src="${data.qrImageUrl}"
+          alt="Receipt QR Code"
+          loading="eager"
+          crossorigin="anonymous"
+        />
+      </div>`
+    : "";
+
   return `
     <div class="rc-card">
       <div class="rc-header">
         <div class="rc-header-title">Transaction Receipt</div>
         <div class="rc-header-timestamp">${timestamp}</div>
       </div>
+
+      ${qrImageSection}
 
       <div class="rc-body">
         <hr class="rc-separator" />
@@ -132,7 +147,14 @@ function renderReceiptCard(data: ReceiptData): string {
 
         <hr class="rc-separator" />
 
-        <button class="rc-view-btn" data-url="${data.receiptLink}">View Full Receipt</button>
+        <button class="rc-view-btn" data-url="${data.receiptLink}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Full Receipt Page
+        </button>
       </div>
     </div>
   `;

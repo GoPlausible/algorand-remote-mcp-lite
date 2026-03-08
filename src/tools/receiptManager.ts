@@ -261,6 +261,7 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
     htmlPath: '/widgets/receipt-card.html',
     resourceUri: receiptCardResourceUri,
     description: 'Interactive transaction receipt UI widget',
+    resourceDomains: ['goplausible.xyz'],
   });
 
   server.registerTool(
@@ -332,6 +333,7 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
               txId,
               note,
               receiptLink,
+              qrImageUrl: `https://goplausible.xyz/api/receipt/image/${uuid}.jpeg`,
               createdAt: new Date().toISOString(),
             }
           },

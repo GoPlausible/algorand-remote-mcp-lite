@@ -12,6 +12,7 @@ interface QrData {
   uriType: string;
   uri: string;
   qrCodeLink: string;
+  qrImageUrl?: string;
   address: string;
   amount?: number;
   assetId?: number;
@@ -74,27 +75,17 @@ function renderQrCard(data: QrData): string {
       </div>`
     : "";
 
-  return `
-    <div class="qr-card">
-      <div class="qr-header">
-        <div class="qr-header-content">
-          <svg class="qr-header-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7"/>
-            <rect x="14" y="3" width="7" height="7"/>
-            <rect x="3" y="14" width="7" height="7"/>
-            <rect x="14" y="14" width="3" height="3"/>
-            <line x1="21" y1="14" x2="21" y2="17"/>
-            <line x1="14" y1="21" x2="17" y2="21"/>
-            <line x1="21" y1="21" x2="21" y2="21"/>
-          </svg>
-          <div>
-            <h2 class="qr-title">QR Code</h2>
-            <span class="qr-badge ${badgeClass}">${badgeLabel}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="qr-link-section">
+  const qrImageSection = data.qrImageUrl
+    ? `<div class="qr-image-section">
+        <img
+          class="qr-image"
+          src="${data.qrImageUrl}"
+          alt="ARC-26 QR Code"
+          loading="eager"
+          crossorigin="anonymous"
+        />
+      </div>`
+    : `<div class="qr-link-section">
         <button class="qr-open-btn" data-url="${data.qrCodeLink}">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="7" height="7"/>
@@ -112,12 +103,29 @@ function renderQrCard(data: QrData): string {
             <line x1="10" y1="14" x2="21" y2="3"/>
           </svg>
         </button>
+      </div>`;
+
+  return `
+    <div class="qr-card">
+      <div class="qr-header">
+        <div class="qr-header-content">
+          <svg class="qr-header-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+            <rect x="14" y="14" width="3" height="3"/>
+            <line x1="21" y1="14" x2="21" y2="17"/>
+            <line x1="14" y1="21" x2="17" y2="21"/>
+            <line x1="21" y1="21" x2="21" y2="21"/>
+          </svg>
+          <div>
+            <h2 class="qr-title">Instant Topup QRCode</h2>
+            <span class="qr-badge ${badgeClass}">${badgeLabel}</span>
+          </div>
+        </div>
       </div>
 
-      <div class="qr-uri-section">
-        <div class="qr-uri-label">ARC-26 URI</div>
-        <div class="qr-uri-value">${data.uri}</div>
-      </div>
+      ${qrImageSection}
 
       <div class="qr-details">
         <div class="qr-detail-row">
@@ -135,15 +143,35 @@ function renderQrCard(data: QrData): string {
         ${amountHtml}
         ${assetHtml}
         ${noteHtml}
+        <div class="qr-detail-row">
+          <span class="qr-detail-label">ARC-26 URI</span>
+          <span class="qr-detail-value qr-uri-inline" title="${data.uri}">${data.uri.slice(0, 32)}…</span>
+          <button class="qr-copy-inline" data-copy="${data.uri}" title="Copy URI">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <button class="qr-copy-btn" data-copy="${data.uri}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-        </svg>
-        Copy URI
-      </button>
+      <div class="qr-footer-actions">
+        <button class="qr-copy-btn" data-copy="${data.uri}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+          </svg>
+          Copy URI
+        </button>
+        <button class="qr-page-btn" data-url="${data.qrCodeLink}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+          Full Page
+        </button>
+      </div>
     </div>
   `;
 }
