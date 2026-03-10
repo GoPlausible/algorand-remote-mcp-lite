@@ -10,6 +10,27 @@ import { ResponseProcessor } from '../../../utils';
 import type { Env, AssetVerificationResponse, AssetDetailsResponse } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
+/** Convert ipfs:// to HTTPS gateway URL */
+function resolveIpfs(url: string): string {
+  if (url.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${url.slice(7)}`;
+  return url;
+}
+
+/** Fetch ARC-3 / ARC-69 metadata JSON from an asset URL, returns null on any failure */
+async function fetchAssetMetadata(rawUrl: string): Promise<Record<string, any> | null> {
+  try {
+    const url = resolveIpfs(rawUrl);
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('json') && !contentType.includes('text')) return null;
+    const text = await res.text();
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Create and validate an Algorand client
  */
@@ -194,7 +215,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
     htmlPath: '/widgets/asset-card.html',
     resourceUri: assetCardResourceUri,
     description: 'Interactive asset detail card UI widget',
-    resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com'],
+    resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com', 'https://ipfs.io'],
   });
   // Get asset information
   server.registerTool(
@@ -252,6 +273,32 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
           }
         };
 
+        // Fetch NFT metadata from asset URL if present
+        const assetUrl = assetParams.url ? Buffer.from(assetParams.url).toString() : null;
+        let metadata: Record<string, any> | null = null;
+        if (assetUrl) {
+          metadata = await fetchAssetMetadata(assetUrl);
+        }
+
+        // Extract useful fields from ARC-3 / ARC-69 metadata JSON
+        const metaImage = metadata?.image
+          ? resolveIpfs(String(metadata.image))
+          : null;
+        const metaDescription = metadata?.description
+          ? String(metadata.description)
+          : null;
+        const metaExternalUrl = metadata?.external_url
+          ? String(metadata.external_url)
+          : null;
+        const metaProperties: Record<string, string> | null = metadata?.properties
+          ? Object.fromEntries(
+              Object.entries(metadata.properties)
+                .filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object')
+                .map(([k, v]) => [k, String(v)])
+            )
+          : null;
+        const hasMetadata = !!(metaImage || metaDescription || metaExternalUrl || metaProperties);
+
         // Transform algod response to match AssetDetailsData for the asset-card widget
         const assetDetails = {
           asset_id: Number(assetId),
@@ -262,12 +309,15 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
           total_supply_as_str: String(assetParams.total ?? '0'),
           creator_address: assetParams.creator || '',
           verification_tier: 'unverified' as const,
-          is_collectible: false,
+          is_collectible: hasMetadata,
           circulating_supply: String(assetParams.total ?? '0'),
-          url: assetParams.url ? Buffer.from(assetParams.url).toString() : null,
+          url: assetUrl,
           logo: null,
           usd_value: null,
-          description: null,
+          description: metaDescription,
+          nft_image: metaImage,
+          external_url: metaExternalUrl,
+          properties: metaProperties,
         };
 
         let textContent: string;
@@ -505,10 +555,11 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
 
         if (filteredAssets.length === 0) {
           return {
-            content: [{
-              type: 'text' as const,
-              text: `No verified assets found for: ${query}`
-            }]
+            content: [{ type: 'text' as const, text: `No verified assets found for: ${query}` }],
+            structuredContent: {
+              structuredData: true,
+              searchResults: { query, assets: [], totalResults: 0 },
+            },
           };
         }
 

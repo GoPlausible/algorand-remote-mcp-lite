@@ -184,6 +184,21 @@ function renderLoading(query?: string): string {
   `;
 }
 
+function renderNotFound(message: string): string {
+  return `
+    <div class="as-card as-not-found">
+      <div class="as-nf-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          <path d="M8 11h6"/><path d="M11 8v6"/>
+        </svg>
+      </div>
+      <div class="as-nf-title">No Results Found</div>
+      <div class="as-nf-text">${message}</div>
+    </div>
+  `;
+}
+
 function renderError(message: string): string {
   return `
     <div class="as-card error">
@@ -348,7 +363,7 @@ app.ontoolresult = (result: CallToolResult) => {
     attachEventHandlers(sc.searchResults);
     attachAsFilterHandlers();
   } else {
-    root.innerHTML = renderError("No asset search results returned.");
+    root.innerHTML = renderNotFound("Try a different keyword or check the asset name.");
   }
 };
 

@@ -24,6 +24,11 @@ interface AssetDetailsData {
   usd_value?: string | null;
   usd_value_24_hour_ago?: string | null;
   description?: string | null;
+  collectible?: Record<string, any> | null;
+  // Server-resolved metadata (algod_get_asset_info enrichment)
+  nft_image?: string | null;
+  external_url?: string | null;
+  properties?: Record<string, string> | null;
 }
 
 interface AssetStructuredContent {
@@ -36,8 +41,8 @@ function truncateAddress(addr: string): string {
 }
 
 function formatSupply(value: string, decimals: number): string {
-  const num = parseFloat(value);
-  if (isNaN(num)) return value;
+  const num = Number.parseFloat(value);
+  if (Number.isNaN(num)) return value;
   if (decimals > 0) {
     const adjusted = num / 10 ** decimals;
     return adjusted.toLocaleString(undefined, {
@@ -50,19 +55,17 @@ function formatSupply(value: string, decimals: number): string {
 
 function formatUsd(value: string | null | undefined): string {
   if (!value) return "--";
-  const num = parseFloat(value);
-  if (isNaN(num)) return value;
-  if (num < 0.01 && num > 0) {
-    return `$${num.toFixed(8)}`;
-  }
+  const num = Number.parseFloat(value);
+  if (Number.isNaN(num)) return value;
+  if (num < 0.01 && num > 0) return `$${num.toFixed(8)}`;
   return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
 }
 
 function calcPriceChange(current: string | null | undefined, previous: string | null | undefined): { percent: string; direction: "up" | "down" | "flat" } | null {
   if (!current || !previous) return null;
-  const cur = parseFloat(current);
-  const prev = parseFloat(previous);
-  if (isNaN(cur) || isNaN(prev) || prev === 0) return null;
+  const cur = Number.parseFloat(current);
+  const prev = Number.parseFloat(previous);
+  if (Number.isNaN(cur) || Number.isNaN(prev) || prev === 0) return null;
   const change = ((cur - prev) / prev) * 100;
   const direction = change > 0 ? "up" : change < 0 ? "down" : "flat";
   return {
@@ -79,10 +82,48 @@ function tierBadgeClass(tier: string): string {
   }
 }
 
+function tierRingClass(tier: string): string {
+  switch (tier) {
+    case "verified": return "asset-logo-ring-verified";
+    case "suspicious": return "asset-logo-ring-suspicious";
+    default: return "asset-logo-ring-unverified";
+  }
+}
+
+/** Resolve an NFT image URL — prefers server-resolved nft_image, then collectible metadata, then URL heuristic */
+function resolveNftImageUrl(data: AssetDetailsData): string | null {
+  // Server-resolved (algod_get_asset_info enrichment)
+  if (data.nft_image) return data.nft_image;
+  if (!data.is_collectible) return null;
+  // Pera collectible metadata
+  if (data.collectible) {
+    const c = data.collectible;
+    const imgUrl = c.image_url || c.media_url || c.thumbnail_url || c.image || c.animation_url || null;
+    if (imgUrl && typeof imgUrl === "string") return convertIpfs(imgUrl);
+  }
+  // Fall back to asset URL if it looks like an image
+  if (data.url) {
+    const u = data.url;
+    if (u.startsWith("ipfs://")) return convertIpfs(u);
+    if (/\.(png|jpg|jpeg|gif|webp|svg)(\?|$)/i.test(u)) return u;
+  }
+  return null;
+}
+
+function convertIpfs(url: string): string {
+  if (url.startsWith("ipfs://")) return `https://ipfs.io/ipfs/${url.slice(7)}`;
+  return url;
+}
+
+const COPY_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+const LINK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+
 function renderAssetCard(data: AssetDetailsData): string {
   const displayName = data.name || `Asset #${data.asset_id}`;
   const unitName = data.unit_name || "";
   const tierLabel = data.verification_tier.toUpperCase();
+
+  const nftImageUrl = resolveNftImageUrl(data);
 
   const logoHtml = data.logo
     ? `<img class="asset-logo-img" src="${data.logo}" alt="${displayName}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="asset-logo-fallback" style="display:none">${displayName.charAt(0).toUpperCase()}</div>`
@@ -101,10 +142,25 @@ function renderAssetCard(data: AssetDetailsData): string {
   const formattedTotalSupply = formatSupply(data.total_supply_as_str || String(data.total_supply), data.fraction_decimals);
   const formattedCirculating = formatSupply(data.circulating_supply, data.fraction_decimals);
 
+  const explorerUrl = `https://allo.info/asset/${data.asset_id}`;
+
+  const urlDisplay = data.url
+    ? (data.url.startsWith("ipfs://")
+        ? `${data.url.slice(0, 38)}...`
+        : data.url.length > 38 ? `${data.url.slice(0, 38)}...` : data.url)
+    : null;
+
+  const urlHref = data.url ? convertIpfs(data.url) : null;
+
   return `
     <div class="asset-card">
-      <div class="asset-hero">
-        <div class="asset-logo">${logoHtml}</div>
+      ${nftImageUrl ? `
+      <div class="asset-nft-banner">
+        <img class="asset-nft-img" src="${nftImageUrl}" alt="${displayName}" onerror="this.closest('.asset-nft-banner').style.display='none'" />
+      </div>` : ""}
+
+      <div class="asset-hero ${nftImageUrl ? "asset-hero-overlap" : ""}">
+        <div class="asset-logo ${tierRingClass(data.verification_tier)}">${logoHtml}</div>
         <div class="asset-identity">
           <h2 class="asset-name">${displayName}</h2>
           ${unitName ? `<span class="asset-unit">${unitName}</span>` : ""}
@@ -116,6 +172,7 @@ function renderAssetCard(data: AssetDetailsData): string {
       </div>
 
       ${data.description ? `<p class="asset-description">${data.description}</p>` : ""}
+
 
       ${data.usd_value ? `
       <div class="asset-price-section">
@@ -130,7 +187,7 @@ function renderAssetCard(data: AssetDetailsData): string {
       <div class="asset-details">
         <div class="asset-detail-row">
           <span class="asset-detail-label">Asset ID</span>
-          <span class="asset-detail-value asset-mono">${data.asset_id}</span>
+          <span class="asset-detail-value asset-mono">${data.asset_id.toLocaleString()}</span>
         </div>
         <div class="asset-detail-row">
           <span class="asset-detail-label">Total Supply</span>
@@ -148,20 +205,39 @@ function renderAssetCard(data: AssetDetailsData): string {
           <span class="asset-detail-label">Creator</span>
           <span class="asset-detail-value asset-address" title="${data.creator_address}">${truncateAddress(data.creator_address)}</span>
         </div>
-        ${data.url ? `
+        ${urlDisplay ? `
         <div class="asset-detail-row">
           <span class="asset-detail-label">URL</span>
-          <span class="asset-detail-value asset-url" title="${data.url}">${data.url.length > 32 ? data.url.slice(0, 32) + "..." : data.url}</span>
+          ${urlHref ? `<button class="asset-detail-value asset-url" data-url="${urlHref}" title="${data.url}">${urlDisplay}</button>` : `<span class="asset-detail-value asset-url" title="${data.url}">${urlDisplay}</span>`}
+        </div>` : ""}
+        ${data.external_url ? `
+        <div class="asset-detail-row">
+          <span class="asset-detail-label">Website</span>
+          <button class="asset-detail-value asset-url" data-url="${data.external_url}" title="${data.external_url}">${data.external_url.length > 34 ? `${data.external_url.slice(0, 34)}...` : data.external_url}</button>
         </div>` : ""}
       </div>
 
-      <button class="asset-copy-btn" data-address="${data.creator_address}">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-        </svg>
-        Copy Creator Address
-      </button>
+      ${data.properties && Object.keys(data.properties).length > 0 ? `
+      <div class="asset-properties">
+        <div class="asset-properties-label">Properties</div>
+        <div class="asset-properties-grid">
+          ${Object.entries(data.properties).map(([k, v]) => `
+          <div class="asset-prop-item">
+            <div class="asset-prop-key">${k}</div>
+            <div class="asset-prop-value">${v}</div>
+          </div>`).join("")}
+        </div>
+      </div>` : ""}
+
+      <div class="asset-actions">
+        <button class="asset-copy-btn" data-address="${data.creator_address}">
+          ${COPY_SVG}
+          Copy Creator Address
+        </button>
+        <button class="asset-explorer-btn" data-url="${explorerUrl}">
+          Allo ${LINK_SVG}
+        </button>
+      </div>
     </div>
   `;
 }
@@ -190,15 +266,9 @@ function attachEventHandlers(data: AssetDetailsData) {
     copyBtn.addEventListener("click", () => {
       const addr = copyBtn.dataset.address || "";
       navigator.clipboard.writeText(addr).then(() => {
-        copyBtn.textContent = "Copied!";
+        copyBtn.innerHTML = `${COPY_SVG} Copied!`;
         setTimeout(() => {
-          copyBtn.innerHTML = `
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-              <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-            </svg>
-            Copy Creator Address
-          `;
+          copyBtn.innerHTML = `${COPY_SVG} Copy Creator Address`;
         }, 2000);
       });
     });
@@ -223,6 +293,14 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 }
 
 const app = new App({ name: "asset-card-widget", version: "1.0.0" });
+
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
 
 app.ontoolinput = (params) => {
   const args = params.arguments as { asset_id?: number; name?: string } | undefined;

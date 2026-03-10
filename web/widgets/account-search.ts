@@ -201,6 +201,21 @@ function renderLoading(): string {
   `;
 }
 
+function renderNotFound(message: string): string {
+  return `
+    <div class="acs-card acs-not-found">
+      <div class="acs-nf-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          <path d="M8 11h6"/><path d="M11 8v6"/>
+        </svg>
+      </div>
+      <div class="acs-nf-title">No Results Found</div>
+      <div class="acs-nf-text">${message}</div>
+    </div>
+  `;
+}
+
 function renderError(message: string): string {
   return `
     <div class="acs-card error">
@@ -291,7 +306,7 @@ app.ontoolresult = (result: CallToolResult) => {
     root.innerHTML = renderSearchResults(sc.accountSearch);
     attachEventHandlers();
   } else {
-    root.innerHTML = renderError("No account search results returned.");
+    root.innerHTML = renderNotFound("Try a different address, name, or NFD domain.");
   }
 };
 

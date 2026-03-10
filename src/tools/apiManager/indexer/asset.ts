@@ -234,17 +234,18 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
         // Execute search
         const response = await search.do();
         const assetsList = (response.assets || []).map((a: any) => {
-          const params = a.params || {};
+          const p = a.params || {};
           return {
             index: Number(a.index ?? 0),
-            name: params.name || null,
-            unitName: params.unitName ?? params['unit-name'] ?? null,
-            total: Number(params.total ?? 0),
-            decimals: Number(params.decimals ?? 0),
-            creator: params.creator || null,
-            defaultFrozen: Boolean(params.defaultFrozen ?? params['default-frozen'] ?? false),
-            url: params.url || null,
-            deleted: Boolean(a.deleted ?? false),
+            params: {
+              name: p.name || undefined,
+              'unit-name': p.unitName ?? p['unit-name'] ?? undefined,
+              total: Number(p.total ?? 0),
+              decimals: Number(p.decimals ?? 0),
+              creator: p.creator || '',
+              'default-frozen': Boolean(p.defaultFrozen ?? p['default-frozen'] ?? false),
+              url: p.url || undefined,
+            },
           };
         });
 

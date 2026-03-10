@@ -330,3 +330,34 @@ body {
   margin-left: auto;
   white-space: nowrap;
 }
+
+/* Not Found state */
+.asi-card.asi-not-found {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 12px;
+  padding: 40px 24px;
+}
+
+.asi-nf-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--color-background-secondary, #f8fafc);
+  border: 1px solid var(--color-border-primary, #e2e8f0);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-secondary, #94a3b8);
+}
+
+.asi-nf-title {
+  font-size: 16px; font-weight: 700;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.asi-nf-text {
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+  text-align: center;
+  max-width: 260px;
+}
