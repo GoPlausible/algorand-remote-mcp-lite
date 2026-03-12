@@ -499,6 +499,16 @@ export interface Env {
    */
   ITEMS_PER_PAGE?: string;
 
+  /**
+   * Alpha Arcade API base URL (default: https://platform.alphaarcade.com/api)
+   */
+  ALPHA_API_BASE_URL?: string;
+
+  /**
+   * Alpha Arcade API key for partner API access
+   */
+  ALPHA_API_KEY?: string;
+
   VERIFIED_ASSETS?: KVNamespace;
   ARC26_KV?: KVNamespace;
   OAUTH_KV?: KVNamespace;

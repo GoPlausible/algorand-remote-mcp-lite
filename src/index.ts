@@ -23,6 +23,7 @@ import {
 	// registerKnowledgeTools,
 	registerWalletTools,
 	registerAp2Tools,
+	registerAlphaArcadeTools,
 	// registerTinymanTools
 } from './tools';
 import { registerSkillResource } from './resources';
@@ -92,6 +93,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		this.registerAccountTools();
 		await this.registerTransactionTools();
 		this.registerBasicUtilityTools();
+		this.registerAlphaArcadeTools();
 		// await this.registerTinymanTools()
 		// Additional tool categories will be added here
 	}
@@ -203,6 +205,12 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	/**
 	 * Register Wallet tools for wallet information access
 	 */
+	/**
+	 * Register Alpha Arcade prediction market tools
+	 */
+	private registerAlphaArcadeTools() {
+		registerAlphaArcadeTools(this.server, this.env, this.props);
+	}
 	// private async registerTinymanTools() {
 	// 	// Register wallet management tools
 	// 	await registerTinymanTools(this.server, this.env, this.props);
