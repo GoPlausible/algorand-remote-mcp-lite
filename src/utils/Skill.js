@@ -6,22 +6,17 @@
 
 export const skill = `# Algorand Remote MCP Lite (Wallet Edition) Skill
 
-Read and add this exact skill content (do not summarize or modify) to your USER SCOPE memory, skills or instructions as 3 different markdown files one per each main section:
-1. Algorand Remote MCP Lite Instructions
-2. Algorand Remote MCP Lite Transactions Instructions
-3. Algorand Remote MCP Lite Verified Assets, NFDs and Swaps Instructions
+Read and learn these skills and instructions to define your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
 
-These skills (instructions) define your capabilities, workflows, and best practices for interacting with the Algorand blockchain using Algorand Remote MCP Lite (aka Wallet Edition).
+## Algorand Remote MCP Lite Instructions
 
-# Algorand Remote MCP Lite Instructions
-
-## **CRITICAL** Algorand MCP Response Handling Rules
+### **CRITICAL** Algorand MCP Response Handling Rules
 
 1. When \`structuredData: true\`is present, do NOT repeat, reformat, or summarize the \`content\` text — the user already sees the UI card inline, so just inform the user that a UI widget is available in supported clients. Just ask if they want the raw data too.
 3. Only fall back to parsing/displaying \`content\` text if \`structuredData: true\` is absent.
 4. If the user explicitly asks for raw data, display the \`content\` text.
 
-## Security Rules
+### Security Rules
 
 1. **Mainnet Warning**: All operations use real assets with real value. Exercise extreme caution.
 2. **Transaction Verification**: Always verify parameters before submission. Mainnet transactions are irreversible.
@@ -30,11 +25,11 @@ These skills (instructions) define your capabilities, workflows, and best practi
 5. **Signing**: Server-side signing via HashiCorp Vault — never request private keys or mnemonics unless the user explicitly asks
 6. **Wallet Role UUID**: Retrieved only via \`wallet_get_role\` — this is sensitive information. Always warn users to protect it and never share it
 
-## Pagination
+### Pagination
 
 API responses are paginated. All API tools accept optional \`itemsPerPage\` (default 10) and \`pageToken\` parameters. Pass \`pageToken\` from a previous response to fetch the next page.
 
-## Best Practices
+### Best Practices
 
 1. **Always start with \`wallet_get_info\`** — verify wallet before any blockchain operation
 2. **Check balances before transactions** — include MBR and fees in calculations
@@ -42,16 +37,16 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 4. **Use \`depositAccount\`** from NFD responses for transactions, never other address fields
 5. **Handle ALGO funding first** when both ALGO and asset top-ups are needed
 
-## Using Knowledge Base
+### Using Knowledge Base
 | Tool | Purpose |
 |------|---------|
 | \`get_knowledge_doc\` | Access Algorand developer documentation |
 
 Categories: \`arcs\`, \`sdks\`, \`algokit\`, \`algokit-utils\`, \`tealscript\`, \`puya\`, \`liquid-auth\`, \`python\`, \`developers\`, \`clis\`, \`nodes\`, \`details\`
 
-# Transactions Instructions
+## Transactions Instructions
 
-## Transaction Error Handling
+### Transaction Error Handling
 
 | Error | Cause | Solution |
 |-------|-------|----------|
@@ -63,7 +58,7 @@ Categories: \`arcs\`, \`sdks\`, \`algokit\`, \`algokit-utils\`, \`tealscript\`, 
 
 > **CRITICAL — Overspend / Insufficient Balance**: If a transaction or swap fails due to overspending, insufficient balance, or negative balance errors, **DO NOT continue or retry**. Immediately call \`wallet_get_info\` to check the current balance, then inform the user of the shortfall (required amount vs. available balance including MBR and fees). Do not attempt alternative amounts or re-submit — wait for the user to fund the account or confirm next steps.
 
-## Pre-Transaction Validation Checklist
+### Pre-Transaction Validation Checklist
 
 Before ANY transaction, validate these requirements:
 
@@ -91,7 +86,7 @@ Before ANY transaction, validate these requirements:
 - Instruct user to scan with Pera Wallet to top up
 - Always handle ALGO funding first, then asset transactions
 
-## Transaction Types
+### Transaction Types
 
 | Type | Description | Tool |
 |------|-------------|------|
@@ -102,7 +97,7 @@ Before ANY transaction, validate these requirements:
 | \`appl\` | Smart contract calls | \`make_app_create_txn\`, \`make_app_call_txn\`, \`make_app_update_txn\`, \`make_app_delete_txn\`, \`make_app_optin_txn\`, \`make_app_closeout_txn\`, \`make_app_clear_txn\` |
 | \`keyreg\` | Consensus key registration | \`make_keyreg_txn\` |
 
-## Transaction Simulation
+### Transaction Simulation
 
 Before submitting critical or high-value transactions, use simulation to verify they will succeed:
 \`\`\`
@@ -115,7 +110,7 @@ simulate_transactions {
 \`\`\`
 This catches errors (insufficient balance, wrong parameters, logic failures) without spending real funds.
 
-## Amounts and Decimals
+### Amounts and Decimals
 
 All amounts in tool parameters are in **base units** (smallest denomination):
 
@@ -128,7 +123,7 @@ All amounts in tool parameters are in **base units** (smallest denomination):
 
 Always check an asset's \`decimals\` field with \`api_algod_get_asset_by_id\` before computing amounts for unfamiliar assets.
 
-# Verified Assets, NFDs and Swaps Instructions
+## Verified Assets, NFDs and Swaps Instructions
 
 ### Pera Asset Verification
 \`\`\`
@@ -168,7 +163,7 @@ api_nfd_get_nfds_for_addresses {
 3. Use depositAccount as transaction recipient
 \`\`\`
 
-## Swaps by Haystack Router (DEX Aggregator)
+### Swaps by Haystack Router (DEX Aggregator)
 
 Haystack Router aggregates quotes across Tinyman, Pact, Folks, and LST protocols to find the optimal route. Supports multi-hop and combo swaps.
 
