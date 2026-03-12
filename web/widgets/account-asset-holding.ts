@@ -46,7 +46,7 @@ function renderCard(data: AssetHoldingData): string {
       <div class="aah-header">
         <div class="aah-header-top">
           <span class="aah-label">Asset Holding</span>
-          <span class="aah-asset-id-badge">#${data.assetId.toLocaleString()}</span>
+          <span class="aah-asset-id-badge">#${data.assetId}</span>
         </div>
         <div class="aah-frozen-row">
           ${data.isFrozen
@@ -59,7 +59,7 @@ function renderCard(data: AssetHoldingData): string {
         <div class="aah-amount-section">
           <div class="aah-amount-label">Balance</div>
           <div class="aah-amount-value">${formatAmount(data.amount)}</div>
-          <div class="aah-amount-sub">units of asset #${data.assetId.toLocaleString()}</div>
+          <div class="aah-amount-sub">units of asset #${data.assetId}</div>
         </div>
 
         <hr class="aah-separator" />
@@ -75,7 +75,7 @@ function renderCard(data: AssetHoldingData): string {
         <div class="aah-row">
           <span class="aah-row-label">Asset ID</span>
           <span class="aah-row-value">
-            <span class="aah-mono">${data.assetId.toLocaleString()}</span>
+            <span class="aah-mono">${data.assetId}</span>
             <button class="aah-copy-btn" data-copy="${data.assetId}" title="Copy asset ID">${COPY_SVG}</button>
           </span>
         </div>

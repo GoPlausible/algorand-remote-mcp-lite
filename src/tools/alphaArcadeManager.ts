@@ -6,10 +6,11 @@
 import { AlphaClient } from '@alpha-arcade/sdk';
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
-import { ResponseProcessor } from '../utils';
+
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../types';
 import { signWithTransit, getPublicKey } from '../utils/vaultManager';
+import { registerWidget, type AssetsBinding } from '../ui/widgetManager';
 
 // ============================================
 // Formatting helpers (microunits → human)
@@ -154,8 +155,50 @@ async function resolveWalletAddress(env: Env, props: Props, walletAddress?: stri
 // Register tools
 // ============================================
 
-export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Props): void {
+export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
 
+  // ------------------------------------------
+  // Widget registrations
+  // ------------------------------------------
+
+  const alphaImageDomains = ['https://platform.alphaarcade.com', 'https://partners.alphaarcade.com', 'https://res.cloudinary.com', 'https://imagedelivery.net'];
+
+  registerWidget(server, assets, {
+    name: 'alpha-markets-widget',
+    htmlPath: '/widgets/alpha-markets.html',
+    resourceUri: 'ui://alpha/markets.html',
+    description: 'Alpha Arcade markets list widget',
+    resourceDomains: alphaImageDomains,
+  });
+
+  registerWidget(server, assets, {
+    name: 'alpha-market-detail-widget',
+    htmlPath: '/widgets/alpha-market-detail.html',
+    resourceUri: 'ui://alpha/market-detail.html',
+    description: 'Alpha Arcade single market detail widget',
+    resourceDomains: alphaImageDomains,
+  });
+
+  registerWidget(server, assets, {
+    name: 'alpha-orderbook-widget',
+    htmlPath: '/widgets/alpha-orderbook.html',
+    resourceUri: 'ui://alpha/orderbook.html',
+    description: 'Alpha Arcade orderbook widget',
+  });
+
+  registerWidget(server, assets, {
+    name: 'alpha-orders-widget',
+    htmlPath: '/widgets/alpha-orders.html',
+    resourceUri: 'ui://alpha/orders.html',
+    description: 'Alpha Arcade open orders widget',
+  });
+
+  registerWidget(server, assets, {
+    name: 'alpha-positions-widget',
+    htmlPath: '/widgets/alpha-positions.html',
+    resourceUri: 'ui://alpha/positions.html',
+    description: 'Alpha Arcade positions widget',
+  });
 
   // ------------------------------------------
   // Read-only tools
@@ -165,6 +208,7 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
     'alpha_get_live_markets',
     {
       description: 'Fetch all live Alpha Arcade prediction markets. Returns summary: id, title, marketAppId, prices, volume. Multi-choice markets have an options[] array — use options[].marketAppId for trading.',
+      _meta: { ui: { resourceUri: 'ui://alpha/markets.html' } },
     },
     async () => {
       try {
@@ -175,15 +219,16 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
             id: m.id,
             title: m.title,
             marketAppId: m.marketAppId,
+            image: m.image || undefined,
             yesAssetId: m.yesAssetId || undefined,
             noAssetId: m.noAssetId || undefined,
+            yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
+            noPrice: m.noProb != null ? formatPriceFromProb(m.noProb) : undefined,
+            volume: m.volume != null ? `$${m.volume.toFixed(2)}` : undefined,
             endsAt: new Date(m.endTs * 1000).toISOString(),
             isResolved: m.isResolved ?? false,
             source: m.source ?? 'unknown',
           };
-          if (m.yesProb != null) entry.yesPrice = formatPriceFromProb(m.yesProb);
-          if (m.noProb != null) entry.noPrice = formatPriceFromProb(m.noProb);
-          if (m.volume != null) entry.volume = `$${m.volume.toFixed(2)}`;
           if (m.categories?.length) entry.categories = m.categories;
           if (m.feeBase != null) entry.feeBase = m.feeBase;
           if (m.options?.length) entry.options = m.options.map((o) => ({
@@ -194,7 +239,12 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
           }));
           return entry;
         });
-        return textResult(JSON.stringify(summary, null, 2));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }],
+          structuredContent: {
+            marketsData: { markets: summary, type: 'live' },
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching live markets: ${error.message || 'Unknown error'}`);
       }
@@ -205,6 +255,7 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
     'alpha_get_reward_markets',
     {
       description: 'Fetch Alpha Arcade markets with liquidity rewards (totalRewards, rewardsPaidOut, etc.). Same shape as alpha_get_live_markets but includes reward info.',
+      _meta: { ui: { resourceUri: 'ui://alpha/markets.html' } },
     },
     async () => {
       try {
@@ -215,15 +266,16 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
             id: m.id,
             title: m.title,
             marketAppId: m.marketAppId,
+            image: m.image || undefined,
             yesAssetId: m.yesAssetId || undefined,
             noAssetId: m.noAssetId || undefined,
+            yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
+            noPrice: m.noProb != null ? formatPriceFromProb(m.noProb) : undefined,
+            volume: m.volume != null ? `$${m.volume.toFixed(2)}` : undefined,
             endsAt: new Date(m.endTs * 1000).toISOString(),
             isResolved: m.isResolved ?? false,
             source: m.source ?? 'unknown',
           };
-          if (m.yesProb != null) entry.yesPrice = formatPriceFromProb(m.yesProb);
-          if (m.noProb != null) entry.noPrice = formatPriceFromProb(m.noProb);
-          if (m.volume != null) entry.volume = `$${m.volume.toFixed(2)}`;
           if (m.categories?.length) entry.categories = m.categories;
           if (m.feeBase != null) entry.feeBase = m.feeBase;
           if (m.totalRewards != null) entry.totalRewards = m.totalRewards;
@@ -240,7 +292,12 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
           }));
           return entry;
         });
-        return textResult(JSON.stringify(summary, null, 2));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }],
+          structuredContent: {
+            marketsData: { markets: summary, type: 'reward' },
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching reward markets: ${error.message || 'Unknown error'}`);
       }
@@ -254,13 +311,19 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
       inputSchema: {
         marketId: z.string().describe('The market ID (app ID string for on-chain, UUID for API)'),
       },
+      _meta: { ui: { resourceUri: 'ui://alpha/market-detail.html' } },
     },
     async ({ marketId }) => {
       try {
         const client = createReadOnlyClient(env);
         const market = await client.getMarket(marketId);
         if (!market) return textResult(`Market "${marketId}" not found.`);
-        return textResult(JSON.stringify(market, null, 2));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(market, null, 2) }],
+          structuredContent: {
+            marketDetailData: market,
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching market: ${error.message || 'Unknown error'}`);
       }
@@ -274,6 +337,7 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
       inputSchema: {
         marketAppId: z.number().describe('The market app ID'),
       },
+      _meta: { ui: { resourceUri: 'ui://alpha/orderbook.html' } },
     },
     async ({ marketAppId }) => {
       try {
@@ -316,7 +380,13 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
 
         const totalOrders = book.yes.bids.length + book.yes.asks.length + book.no.bids.length + book.no.asks.length;
 
-        return textResult(JSON.stringify({ unified: { asks, bids, spread }, totalOrders }, null, 2));
+        const orderbookResult = { unified: { asks, bids, spread }, totalOrders };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(orderbookResult, null, 2) }],
+          structuredContent: {
+            orderbookData: { ...orderbookResult, marketAppId },
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching orderbook: ${error.message || 'Unknown error'}`);
       }
@@ -331,6 +401,7 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
         marketAppId: z.number().describe('The market app ID'),
         walletAddress: z.string().optional().describe('Algorand wallet address (uses MCP wallet if omitted)'),
       },
+      _meta: { ui: { resourceUri: 'ui://alpha/orders.html' } },
     },
     async ({ marketAppId, walletAddress }) => {
       try {
@@ -346,11 +417,15 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
           filled: formatQty(o.quantityFilled),
           remaining: formatQty(o.quantity - o.quantityFilled),
         }));
-        return textResult(
-          formatted.length > 0
-            ? JSON.stringify(formatted, null, 2)
-            : 'No open orders found for this wallet on this market.',
-        );
+        const text = formatted.length > 0
+          ? JSON.stringify(formatted, null, 2)
+          : 'No open orders found for this wallet on this market.';
+        return {
+          content: [{ type: 'text' as const, text }],
+          structuredContent: {
+            ordersData: { orders: formatted, marketAppId, walletAddress: address },
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching open orders: ${error.message || 'Unknown error'}`);
       }
@@ -364,6 +439,7 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
       inputSchema: {
         walletAddress: z.string().optional().describe('Algorand wallet address (uses MCP wallet if omitted)'),
       },
+      _meta: { ui: { resourceUri: 'ui://alpha/positions.html' } },
     },
     async ({ walletAddress }) => {
       try {
@@ -378,11 +454,15 @@ export function registerAlphaArcadeTools(server: McpServer, env: Env, props: Pro
           yesAssetId: p.yesAssetId,
           noAssetId: p.noAssetId,
         }));
-        return textResult(
-          formatted.length > 0
-            ? JSON.stringify(formatted, null, 2)
-            : 'No positions found for this wallet.',
-        );
+        const text = formatted.length > 0
+          ? JSON.stringify(formatted, null, 2)
+          : 'No positions found for this wallet.';
+        return {
+          content: [{ type: 'text' as const, text }],
+          structuredContent: {
+            positionsData: { positions: formatted, walletAddress: address },
+          },
+        };
       } catch (error: any) {
         return textResult(`Error fetching positions: ${error.message || 'Unknown error'}`);
       }

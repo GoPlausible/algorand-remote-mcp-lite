@@ -85,7 +85,7 @@ function renderCard(data: PendingTxnData): string {
     ? `<div class="pt-amount-section">
         <div class="pt-amount-label">Asset Amount</div>
         <div class="pt-amount-value">${BigInt(data.amount).toLocaleString()}</div>
-        ${data.assetId ? `<div class="pt-amount-sub">Asset #${data.assetId.toLocaleString()}</div>` : ''}
+        ${data.assetId ? `<div class="pt-amount-sub">Asset #${data.assetId}</div>` : ''}
        </div><hr class="pt-separator" />`
     : '';
 

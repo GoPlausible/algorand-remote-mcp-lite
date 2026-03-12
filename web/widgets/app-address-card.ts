@@ -35,7 +35,7 @@ function renderCard(data: AppAddressData): string {
         <div class="aac-icon">${APP_SVG}</div>
         <div class="aac-title-group">
           <div class="aac-title">Application Address</div>
-          <div class="aac-app-id-badge">App ID #${data.appId.toLocaleString()}</div>
+          <div class="aac-app-id-badge">App ID #${data.appId}</div>
         </div>
       </div>
 
@@ -48,7 +48,7 @@ function renderCard(data: AppAddressData): string {
       </div>
 
       <div class="aac-info">
-        This address is deterministically derived from App ID #${data.appId.toLocaleString()} and cannot hold ALGO unless funded.
+        This address is deterministically derived from App ID #${data.appId} and cannot hold ALGO unless funded.
       </div>
 
       ${data.explorerUrl ? `

@@ -209,7 +209,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 * Register Alpha Arcade prediction market tools
 	 */
 	private registerAlphaArcadeTools() {
-		registerAlphaArcadeTools(this.server, this.env, this.props);
+		registerAlphaArcadeTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 	// private async registerTinymanTools() {
 	// 	// Register wallet management tools
