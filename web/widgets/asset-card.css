@@ -254,6 +254,25 @@ body {
   font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
   font-size: 12px;
   letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.asset-copy-inline {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--color-text-tertiary, #94a3b8);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.asset-copy-inline:hover {
+  color: var(--color-text-secondary, #64748b);
+  background: var(--color-background-tertiary, #e2e8f0);
 }
 
 .asset-address {

@@ -187,7 +187,10 @@ function renderAssetCard(data: AssetDetailsData): string {
       <div class="asset-details">
         <div class="asset-detail-row">
           <span class="asset-detail-label">Asset ID</span>
-          <span class="asset-detail-value asset-mono">${data.asset_id.toLocaleString()}</span>
+          <span class="asset-detail-value asset-mono">
+            ${data.asset_id}
+            <button class="asset-copy-inline" data-copy="${data.asset_id}" title="Copy Asset ID">${COPY_SVG}</button>
+          </span>
         </div>
         <div class="asset-detail-row">
           <span class="asset-detail-label">Total Supply</span>
@@ -230,7 +233,7 @@ function renderAssetCard(data: AssetDetailsData): string {
       </div>` : ""}
 
       <div class="asset-actions">
-        <button class="asset-copy-btn" data-address="${data.creator_address}">
+        <button class="asset-copy-btn" data-copy="${data.creator_address}">
           ${COPY_SVG}
           Copy Creator Address
         </button>
@@ -260,20 +263,6 @@ function renderError(message: string): string {
   `;
 }
 
-function attachEventHandlers(data: AssetDetailsData) {
-  const copyBtn = root.querySelector(".asset-copy-btn") as HTMLButtonElement | null;
-  if (copyBtn) {
-    copyBtn.addEventListener("click", () => {
-      const addr = copyBtn.dataset.address || "";
-      navigator.clipboard.writeText(addr).then(() => {
-        copyBtn.innerHTML = `${COPY_SVG} Copied!`;
-        setTimeout(() => {
-          copyBtn.innerHTML = `${COPY_SVG} Copy Creator Address`;
-        }, 2000);
-      });
-    });
-  }
-}
 
 // --- App lifecycle ---
 
@@ -295,9 +284,23 @@ function handleHostContextChanged(ctx: McpUiHostContext) {
 const app = new App({ name: "asset-card-widget", version: "1.0.0" });
 
 document.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLElement>("[data-url]");
-  if (btn) {
-    const url = btn.dataset.url;
+  const target = e.target as HTMLElement;
+  // Handle copy buttons (inline and main)
+  const copyBtn = target.closest<HTMLElement>("[data-copy]");
+  if (copyBtn) {
+    e.stopPropagation();
+    const text = copyBtn.dataset.copy || "";
+    navigator.clipboard.writeText(text).then(() => {
+      const original = copyBtn.innerHTML;
+      copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+      setTimeout(() => { copyBtn.innerHTML = original; }, 1500);
+    });
+    return;
+  }
+  // Handle link buttons
+  const urlBtn = target.closest<HTMLElement>("[data-url]");
+  if (urlBtn) {
+    const url = urlBtn.dataset.url;
     if (url) app.openLink({ url });
   }
 });
@@ -318,7 +321,6 @@ app.ontoolresult = (result: CallToolResult) => {
   const sc = result.structuredContent as AssetStructuredContent | undefined;
   if (sc?.assetDetails) {
     root.innerHTML = renderAssetCard(sc.assetDetails);
-    attachEventHandlers(sc.assetDetails);
   } else {
     root.innerHTML = renderError("Asset not found or no data returned.");
   }

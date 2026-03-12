@@ -127,7 +127,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerAccountTools() {
 		// Register all account-related tools
-		registerAccountTools(this.server, this.env, this.props);
+		registerAccountTools(this.server, this.env, this.props, this.env.ASSETS);
 	}
 
 	/**

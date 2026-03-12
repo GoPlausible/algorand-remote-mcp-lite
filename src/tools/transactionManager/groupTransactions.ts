@@ -271,6 +271,15 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
     }
   );
 
+  // Register atomic-group-card widget
+  const atomicGroupCardResourceUri = 'ui://txn/atomic-group-card.html';
+  registerWidget(server, assets, {
+    name: 'atomic-group-card-widget',
+    htmlPath: '/widgets/atomic-group-card.html',
+    resourceUri: atomicGroupCardResourceUri,
+    description: 'Atomic group creation result card with success check and copy group ID',
+  });
+
   // Create atomic transaction group
   server.registerTool(
     'sdk_create_atomic_group',
@@ -282,12 +291,16 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
           params: z.any().describe('Transaction-specific parameters')
         })).describe('Array of transaction specifications')
       },
+      _meta: {
+        ui: { resourceUri: atomicGroupCardResourceUri },
+        'ui/resourceUri': atomicGroupCardResourceUri,
+      },
     },
     async ({ transactions }) => {
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand node URL not configured'
           }]
         };
@@ -319,16 +332,23 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         );
 
         // Return the encoded transactions with group ID
-        return ResponseProcessor.processResponse({
-          groupId: Buffer.from(groupedTxns[0].group!).toString('base64'),
+        const groupId = Buffer.from(groupedTxns[0].group!).toString('base64');
+        const atomicGroupResult = { groupId, txnCount: encodedTxns.length };
+        const responseData = {
+          ...atomicGroupResult,
           encodedTxns,
-          txnCount: encodedTxns.length,
           message: "Successfully created atomic transaction group"
-        });
+        };
+
+        const textResponse = ResponseProcessor.processResponse(responseData);
+        return {
+          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          structuredContent: { structuredData: true, atomicGroupResult },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error creating atomic transaction group: ${error.message || 'Unknown error'}`
           }]
         };

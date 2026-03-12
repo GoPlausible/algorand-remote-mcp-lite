@@ -31,6 +31,18 @@ async function fetchAssetMetadata(rawUrl: string): Promise<Record<string, any> |
   }
 }
 
+/** Fetch Pera asset details for enrichment (mainnet only), returns null on any failure */
+async function fetchPeraAssetDetails(assetId: number, env: Env): Promise<AssetDetailsResponse | null> {
+  try {
+    const baseUrl = env.PERA_WALLET_API_URL || 'https://mainnet.api.perawallet.app/v1/public';
+    const res = await fetch(`${baseUrl}/assets/${assetId}/`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return await res.json() as AssetDetailsResponse;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Create and validate an Algorand client
  */
@@ -215,7 +227,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
     htmlPath: '/widgets/asset-card.html',
     resourceUri: assetCardResourceUri,
     description: 'Interactive asset detail card UI widget',
-    resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com', 'https://ipfs.io'],
+    resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com', 'https://algorand-wallet-mainnet.b-cdn.net', 'https://ipfs.io'],
   });
   // Get asset information
   server.registerTool(
@@ -273,12 +285,14 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
           }
         };
 
-        // Fetch NFT metadata from asset URL if present
+        // Fetch NFT metadata and Pera verification in parallel
         const assetUrl = assetParams.url ? Buffer.from(assetParams.url).toString() : null;
-        let metadata: Record<string, any> | null = null;
-        if (assetUrl) {
-          metadata = await fetchAssetMetadata(assetUrl);
-        }
+        const isMainnet = (env.ALGORAND_NETWORK || 'mainnet') === 'mainnet';
+
+        const [metadata, peraData] = await Promise.all([
+          assetUrl ? fetchAssetMetadata(assetUrl) : Promise.resolve(null),
+          isMainnet ? fetchPeraAssetDetails(Number(assetId), env) : Promise.resolve(null),
+        ]);
 
         // Extract useful fields from ARC-3 / ARC-69 metadata JSON
         const metaImage = metadata?.image
@@ -300,6 +314,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
         const hasMetadata = !!(metaImage || metaDescription || metaExternalUrl || metaProperties);
 
         // Transform algod response to match AssetDetailsData for the asset-card widget
+        // Enrich with Pera data when available (mainnet only)
         const assetDetails = {
           asset_id: Number(assetId),
           name: assetParams.name || null,
@@ -308,13 +323,15 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
           total_supply: Number(assetParams.total ?? 0),
           total_supply_as_str: String(assetParams.total ?? '0'),
           creator_address: assetParams.creator || '',
-          verification_tier: 'unverified' as const,
-          is_collectible: hasMetadata,
-          circulating_supply: String(assetParams.total ?? '0'),
+          verification_tier: peraData?.verification_tier || ('unverified' as const),
+          is_collectible: peraData?.is_collectible ?? hasMetadata,
+          circulating_supply: peraData?.circulating_supply || String(assetParams.total ?? '0'),
           url: assetUrl,
-          logo: null,
-          usd_value: null,
-          description: metaDescription,
+          logo: peraData?.logo || null,
+          usd_value: peraData?.usd_value || null,
+          usd_value_24_hour_ago: peraData?.usd_value_24_hour_ago || null,
+          description: metaDescription || peraData?.description || null,
+          collectible: peraData?.collectible || null,
           nft_image: metaImage,
           external_url: metaExternalUrl,
           properties: metaProperties,
