@@ -80,8 +80,16 @@ function probToMicro(prob?: number): number {
 	return Math.round(prob);
 }
 
+interface PositionEntry {
+	marketAppId: number;
+	title: string;
+	yesBalance: string;
+	noBalance: string;
+}
+
 let currentMarket: MarketDetail | null = null;
 let openOrders: OrderEntry[] = [];
+let marketPosition: PositionEntry | null = null;
 let walletAddress = "";
 let currentView: "market" | "order-detail" = "market";
 let selectedOrder: OrderEntry | null = null;
@@ -110,15 +118,29 @@ function renderOrderRow(o: OrderEntry): string {
     </div>`;
 }
 
+function renderPositionHtml(): string {
+	if (!marketPosition) return "";
+	return `
+	<div class="aa-position-section">
+		<div class="aa-trade-label">Your Position</div>
+		<div style="display:flex;gap:8px;padding:4px 0">
+			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${marketPosition.yesBalance}</span></div>
+			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${marketPosition.noBalance}</span></div>
+		</div>
+	</div>`;
+}
+
 function renderOrdersSection(): string {
+	const posHtml = renderPositionHtml();
+
 	if (openOrders.length === 0) {
-		return `<div class="aa-orders-section">
+		return `${posHtml}<div class="aa-orders-section">
       <div class="aa-trade-label">Your Orders</div>
       <div class="aa-empty" style="padding:12px 0">No open orders on this market.</div>
     </div>`;
 	}
 
-	return `<div class="aa-orders-section">
+	return `${posHtml}<div class="aa-orders-section">
     <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${openOrders.length})</span></div>
     <div id="aa-orders-list">${openOrders.map(renderOrderRow).join("")}</div>
   </div>`;
@@ -360,6 +382,22 @@ async function fetchOpenOrders() {
 		}
 	} catch {
 		openOrders = [];
+	}
+
+	// Fetch positions in parallel
+	try {
+		const posResult = await app.callServerTool({
+			name: "alpha_get_positions",
+			arguments: {},
+		});
+		const posSc = posResult.structuredContent as
+			| { positionsData?: { positions: PositionEntry[] } }
+			| undefined;
+		const allPositions = posSc?.positionsData?.positions || [];
+		marketPosition =
+			allPositions.find((p) => p.marketAppId === currentMarket?.marketAppId) || null;
+	} catch {
+		marketPosition = null;
 	}
 
 	if (ordersArea) ordersArea.innerHTML = renderOrdersSection();

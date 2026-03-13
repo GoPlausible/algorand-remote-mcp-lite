@@ -92,7 +92,15 @@ let currentPage = 0;
 const PAGE_SIZE = 10;
 let isDetailView = false;
 let currentDetailMarket: MarketDetail | null = null;
+interface PositionEntry {
+	marketAppId: number;
+	title: string;
+	yesBalance: string;
+	noBalance: string;
+}
+
 let detailOpenOrders: OrderEntry[] = [];
+let detailMarketPosition: PositionEntry | null = null;
 let detailWalletAddress = "";
 let detailCurrentView: "market" | "order-detail" = "market";
 let detailSelectedOrder: OrderEntry | null = null;
@@ -395,14 +403,28 @@ function renderDetailOrderRow(o: OrderEntry): string {
     </div>`;
 }
 
+function renderDetailPositionHtml(): string {
+	if (!detailMarketPosition) return "";
+	return `
+	<div class="aa-position-section">
+		<div class="aa-trade-label">Your Position</div>
+		<div style="display:flex;gap:8px;padding:4px 0">
+			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${detailMarketPosition.yesBalance}</span></div>
+			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${detailMarketPosition.noBalance}</span></div>
+		</div>
+	</div>`;
+}
+
 function renderDetailOrdersSection(): string {
+	const posHtml = renderDetailPositionHtml();
+
 	if (detailOpenOrders.length === 0) {
-		return `<div class="aa-orders-section">
+		return `${posHtml}<div class="aa-orders-section">
       <div class="aa-trade-label">Your Orders</div>
       <div class="aa-empty" style="padding:12px 0">No open orders on this market.</div>
     </div>`;
 	}
-	return `<div class="aa-orders-section">
+	return `${posHtml}<div class="aa-orders-section">
     <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${detailOpenOrders.length})</span></div>
     <div id="aa-detail-orders-list">${detailOpenOrders.map(renderDetailOrderRow).join("")}</div>
   </div>`;
@@ -643,6 +665,22 @@ async function fetchDetailOpenOrders() {
 		}
 	} catch {
 		detailOpenOrders = [];
+	}
+
+	// Fetch positions in parallel
+	try {
+		const posResult = await app.callServerTool({
+			name: "alpha_get_positions",
+			arguments: {},
+		});
+		const posSc = posResult.structuredContent as
+			| { positionsData?: { positions: PositionEntry[] } }
+			| undefined;
+		const allPositions = posSc?.positionsData?.positions || [];
+		detailMarketPosition =
+			allPositions.find((p) => p.marketAppId === currentDetailMarket?.marketAppId) || null;
+	} catch {
+		detailMarketPosition = null;
 	}
 
 	if (ordersArea) ordersArea.innerHTML = renderDetailOrdersSection();

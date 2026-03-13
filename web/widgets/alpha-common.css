@@ -146,6 +146,14 @@ body {
 /* Trade form hint */
 .aa-trade-form-hint { font-size: 11px; color: var(--color-text-secondary, #94a3b8); margin-top: 2px; display: block; }
 
+/* Position section */
+.aa-position-section { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-primary, #f1f5f9); }
+.aa-pos-badge { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; }
+.aa-pos-yes { background: rgba(34,197,94,.08); color: #16a34a; }
+.aa-pos-no { background: rgba(239,68,68,.08); color: #dc2626; }
+.aa-pos-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.aa-pos-val { font-family: var(--font-mono, "SF Mono", monospace); }
+
 /* Copy inline */
 .aa-copy-inline {
   background: none; border: none; cursor: pointer; padding: 2px; border-radius: 4px;
