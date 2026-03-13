@@ -34,7 +34,7 @@ import { registerSkillResource } from './resources';
 export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	server = new McpServer({
 		name: "Algorand Remote MCP Lite",
-		version: "1.9.1",
+		version: "1.9.3",
 		description: "Algorand Remote MCP Lite (aka Wallet Edition) for interacting with the Algorand blockchain. Use algorand_mcp_skill tool at start of each session to learn how to interact and operate Algorand Remote MCP Lite.",
 		websiteUrl: "https://goplausible.com",
 		icons: [{
