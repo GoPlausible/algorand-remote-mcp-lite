@@ -178,6 +178,72 @@ export function registerAlphaArcadeTools(
 	assets?: AssetsBinding,
 ): void {
 	// ------------------------------------------
+	// Friendly error messages for common blockchain errors
+	// ------------------------------------------
+	function friendlyTradeError(msg: string): string {
+		const m = msg || "Unknown error";
+
+		// Detect whether error involves USDC (asset 31566704) or ALGO
+		const isUsdcError = m.includes(String(USDC_ASSET_ID)) || /usdc/i.test(m);
+
+		// Overspend with extractable amounts (ALGO)
+		const overspendAlgo = m.match(/overspend.*?MicroAlgos:\{Raw:(\d+)\}.*?tried to spend \{(\d+)\}/i);
+		if (overspendAlgo) {
+			const have = (Number.parseInt(overspendAlgo[1], 10) / 1e6).toFixed(2);
+			const need = (Number.parseInt(overspendAlgo[2], 10) / 1e6).toFixed(2);
+			return `Insufficient ALGO balance. You have ~${have} ALGO but need ~${need} ALGO (escrow collateral + fees). Please fund your wallet with more ALGO.`;
+		}
+		// Overspend with extractable amounts (asset / USDC)
+		const overspendAsset = m.match(/overspend.*?asset.*?(\d+).*?holding:\{Amount:(\d+)\}.*?tried to spend \{(\d+)\}/i);
+		if (overspendAsset) {
+			const assetId = overspendAsset[1];
+			const have = (Number.parseInt(overspendAsset[2], 10) / 1e6).toFixed(2);
+			const need = (Number.parseInt(overspendAsset[3], 10) / 1e6).toFixed(2);
+			const label = assetId === String(USDC_ASSET_ID) ? "USDC" : `asset ${assetId}`;
+			return `Insufficient ${label} balance. You have ~$${have} but need ~$${need}. Please add more ${label} to your wallet.`;
+		}
+		// Generic overspend
+		if (/overspend/i.test(m)) {
+			const label = isUsdcError ? "USDC" : "ALGO";
+			return `Insufficient ${label} balance to cover this transaction. Please add more ${label} to your wallet.`;
+		}
+		// Underflow (typically asset transfer exceeding holdings)
+		if (/underflow/i.test(m)) {
+			const label = isUsdcError ? "USDC" : "token";
+			return `Insufficient ${label} balance for this operation. Make sure you hold enough ${label} before trading.`;
+		}
+		// Asset not opted in
+		if (/asset \d+ missing/i.test(m) || /not opted in/i.test(m)) {
+			if (isUsdcError) {
+				return "Your account hasn't opted in to USDC. Please opt in to USDC (asset 31566704) first.";
+			}
+			return "Your account hasn't opted in to a required asset. Please opt in first.";
+		}
+		// Min balance / below min
+		if (/below min/i.test(m) || /min balance/i.test(m)) {
+			return "This transaction would drop your account below the minimum ALGO balance. Please add more ALGO.";
+		}
+		// Dead / closed account
+		if (/account.*has been closed/i.test(m) || /dead account/i.test(m)) {
+			return "The target account has been closed and cannot receive transactions.";
+		}
+		// Group size
+		if (/group size/i.test(m)) {
+			return "Transaction group error. Please try again.";
+		}
+		// Logic eval / TEAL rejection
+		if (/logic eval error/i.test(m) || /rejected by logic/i.test(m)) {
+			return "The smart contract rejected this transaction. The order parameters may be invalid or the market conditions have changed. Please try again.";
+		}
+		// Network / timeout
+		if (/timeout/i.test(m) || /network/i.test(m) || /ECONNREFUSED/i.test(m)) {
+			return "Network error reaching the Algorand node. Please try again in a moment.";
+		}
+		// Fallback: return original
+		return m;
+	}
+
+	// ------------------------------------------
 	// Widget registrations
 	// ------------------------------------------
 
@@ -776,7 +842,7 @@ export function registerAlphaArcadeTools(
 					error.stack,
 				);
 				return textResult(
-					`Error creating limit order: ${error.message || "Unknown error"}`,
+					`Error creating limit order: ${friendlyTradeError(error.message)}`,
 				);
 			}
 		},
@@ -865,7 +931,7 @@ export function registerAlphaArcadeTools(
 					error.stack,
 				);
 				return textResult(
-					`Error creating market order: ${error.message || "Unknown error"}`,
+					`Error creating market order: ${friendlyTradeError(error.message)}`,
 				);
 			}
 		},
@@ -917,7 +983,7 @@ export function registerAlphaArcadeTools(
 				};
 			} catch (error: any) {
 				console.error(`[Alpha] alpha_cancel_order — error: ${error.message}`, error.stack);
-				return textResult(`Error cancelling order: ${error.message || "Unknown error"}`);
+				return textResult(`Error cancelling order: ${friendlyTradeError(error.message)}`);
 			}
 		},
 	);
@@ -979,7 +1045,7 @@ export function registerAlphaArcadeTools(
 				};
 			} catch (error: any) {
 				console.error(`[Alpha] alpha_amend_order — error: ${error.message}`, error.stack);
-				return textResult(`Error amending order: ${error.message || "Unknown error"}`);
+				return textResult(`Error amending order: ${friendlyTradeError(error.message)}`);
 			}
 		},
 	);
@@ -1078,7 +1144,7 @@ export function registerAlphaArcadeTools(
 				};
 			} catch (error: any) {
 				console.error(`[Alpha] alpha_split_shares — error: ${error.message}`, error.stack);
-				return textResult(`Error splitting shares: ${error.message || "Unknown error"}`);
+				return textResult(`Error splitting shares: ${friendlyTradeError(error.message)}`);
 			}
 		},
 	);
@@ -1118,7 +1184,7 @@ export function registerAlphaArcadeTools(
 				};
 			} catch (error: any) {
 				console.error(`[Alpha] alpha_merge_shares — error: ${error.message}`, error.stack);
-				return textResult(`Error merging shares: ${error.message || "Unknown error"}`);
+				return textResult(`Error merging shares: ${friendlyTradeError(error.message)}`);
 			}
 		},
 	);
@@ -1166,7 +1232,7 @@ export function registerAlphaArcadeTools(
 				};
 			} catch (error: any) {
 				console.error(`[Alpha] alpha_claim — error: ${error.message}`, error.stack);
-				return textResult(`Error claiming: ${error.message || "Unknown error"}`);
+				return textResult(`Error claiming: ${friendlyTradeError(error.message)}`);
 			}
 		},
 	);

@@ -299,4 +299,16 @@ Sell orders lock outcome tokens as collateral.
 - **Orderbook cross-side**: Check YES asks AND NO bids (complement) for best price.
 - **Save escrowAppId**: It's the only way to cancel or reference your order later.
 - **Trading requires wallet**: Read-only tools work for everyone, but trading uses your MCP wallet.
+
+## External Links
+
+- GoPlausible: https://goplausible.com
+- Algorand: https://algorand.co
+- Algorand Developer Docs: https://dev.algorand.co/
+- Algorand x402: https://x402.goplausible.xyz
+- Algorand x402 Test Endpoints: https://example.x402.goplausible.xyz/
+- Testnet Faucet: https://lora.algokit.io/testnet/fund
+- Testnet USDC Faucet: https://faucet.circle.com/
+- Allo.info (Block Explorer): https://allo.info
+- Pera Explorer: https://explorer.perawallet.app/
 `;
