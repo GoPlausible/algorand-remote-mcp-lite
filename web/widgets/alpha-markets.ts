@@ -672,14 +672,15 @@ async function fetchDetailOrderbook() {
 
 // ---- Detail view ----
 
+// yesProb / noProb from API are already in microunits (0–1000000 = $0.00–$1.00)
 function formatDetailPrice(prob?: number): string {
 	if (prob == null) return "—";
-	return `$${(prob / 100).toFixed(2)}`;
+	return `$${(prob / 1_000_000).toFixed(2)}`;
 }
 
 function probToMicro(prob?: number): number {
 	if (prob == null) return 500000;
-	return Math.round((prob / 100) * 1_000_000);
+	return Math.round(prob);
 }
 
 function renderDetailView(m: MarketDetail): string {
@@ -1011,6 +1012,9 @@ async function executeListTrade(type: "market" | "limit", position: 0 | 1) {
 	try {
 		if (type === "market") {
 			const slippage = Math.round(0.05 * 1_000_000);
+			console.log(
+				`[Trade] market order: marketAppId=${m.marketAppId}, pos=${position}, price=${defaultPrice}, qty=${quantity}, amount=${amount}, yesProb=${m.yesProb}, noProb=${m.noProb}`,
+			);
 			const result = await app.callServerTool({
 				name: "alpha_create_market_order",
 				arguments: {

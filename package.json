@@ -1,6 +1,6 @@
 {
 	"name": "algorand-remote-mcp-lite",
-	"version": "1.9.3",
+	"version": "1.9.4",
 	"private": true,
 	"scripts": {
 		"deploy": "wrangler deploy --minify",

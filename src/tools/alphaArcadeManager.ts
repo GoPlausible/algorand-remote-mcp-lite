@@ -18,8 +18,8 @@ import { getPublicKey, signWithTransit } from "../utils/vaultManager";
 
 const formatPrice = (microunits: number): string => `$${(microunits / 1e6).toFixed(2)}`;
 const formatQty = (microunits: number): string => `${(microunits / 1e6).toFixed(2)} shares`;
-const formatPriceFromProb = (probabilityPercent: number): string =>
-	`$${(probabilityPercent / 100).toFixed(2)}`;
+// yesProb / noProb from API are already in microunits (0–1000000)
+const formatPriceFromProb = (microunits: number): string => `$${(microunits / 1e6).toFixed(2)}`;
 
 // ============================================
 // Alpha Arcade config
@@ -724,15 +724,27 @@ export function registerAlphaArcadeTools(
 		},
 		async ({ marketAppId, position, price, quantity, isBuying }) => {
 			try {
+				const safePrice = Math.max(0, Math.round(price));
+				const safeQty = Math.max(0, Math.round(quantity));
 				console.log(
-					`[Alpha] alpha_create_limit_order — market=${marketAppId}, pos=${position}, price=${price}, qty=${quantity}, buying=${isBuying}`,
+					`[Alpha] alpha_create_limit_order — market=${marketAppId}, pos=${position}, price=${safePrice}, qty=${safeQty}, buying=${isBuying} (raw: price=${price}, qty=${quantity})`,
 				);
+				if (safePrice <= 0 || safePrice > 1_000_000) {
+					return textResult(
+						`Invalid price: ${price}. Price must be between 1 and 1000000 microunits ($0.000001–$1.00).`,
+					);
+				}
+				if (safeQty <= 0 || safeQty > 1_000_000_000_000) {
+					return textResult(
+						`Invalid quantity: ${quantity}. Quantity must be positive and reasonable.`,
+					);
+				}
 				const client = await createTradingClient(env, props);
 				const result = await client.createLimitOrder({
 					marketAppId,
 					position: position as 0 | 1,
-					price,
-					quantity,
+					price: safePrice,
+					quantity: safeQty,
 					isBuying,
 				});
 				const posLabel = position === 1 ? "YES" : "NO";
@@ -789,17 +801,38 @@ export function registerAlphaArcadeTools(
 		},
 		async ({ marketAppId, position, price, quantity, isBuying, slippage }) => {
 			try {
+				// Validate all numeric params are positive integers that fit uint64
+				const safePrice = Math.max(0, Math.round(price));
+				const safeQty = Math.max(0, Math.round(quantity));
+				const safeSlip = Math.max(0, Math.round(slippage));
 				console.log(
-					`[Alpha] alpha_create_market_order — market=${marketAppId}, pos=${position}, price=${price}, qty=${quantity}, buying=${isBuying}, slippage=${slippage}`,
+					`[Alpha] alpha_create_market_order — market=${marketAppId}, pos=${position}, price=${safePrice}, qty=${safeQty}, buying=${isBuying}, slippage=${safeSlip} (raw: price=${price}, qty=${quantity}, slip=${slippage})`,
 				);
+				if (safePrice <= 0 || safePrice > 1_000_000) {
+					return textResult(
+						`Invalid price: ${price}. Price must be between 1 and 1000000 microunits ($0.000001–$1.00).`,
+					);
+				}
+				if (safeQty <= 0 || safeQty > 1_000_000_000_000) {
+					return textResult(
+						`Invalid quantity: ${quantity}. Quantity must be positive and reasonable.`,
+					);
+				}
+				// Pre-check: estimate fundAmount to catch overflow before SDK does
+				const estFund = Math.floor((safeQty * (safePrice + safeSlip)) / 1_000_000);
+				if (estFund < 0 || estFund > Number.MAX_SAFE_INTEGER) {
+					return textResult(
+						`Computed fund amount (${estFund}) would overflow. Reduce your trade amount.`,
+					);
+				}
 				const client = await createTradingClient(env, props);
 				const result = await client.createMarketOrder({
 					marketAppId,
 					position: position as 0 | 1,
-					price,
-					quantity,
+					price: safePrice,
+					quantity: safeQty,
 					isBuying,
-					slippage,
+					slippage: safeSlip,
 				});
 				const posLabel = position === 1 ? "YES" : "NO";
 				const sideLabel = isBuying ? "BUY" : "SELL";

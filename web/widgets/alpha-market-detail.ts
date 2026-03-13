@@ -69,14 +69,15 @@ const CANCEL_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" 
 const CONFIRM_SMALL_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const CANCEL_SMALL_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
 
+// yesProb / noProb from API are already in microunits (0–1000000 = $0.00–$1.00)
 function formatPrice(prob?: number): string {
 	if (prob == null) return "—";
-	return `$${(prob / 100).toFixed(2)}`;
+	return `$${(prob / 1_000_000).toFixed(2)}`;
 }
 
 function probToMicro(prob?: number): number {
 	if (prob == null) return 500000;
-	return Math.round((prob / 100) * 1_000_000);
+	return Math.round(prob);
 }
 
 let currentMarket: MarketDetail | null = null;
@@ -677,6 +678,9 @@ async function executeTrade(type: "market" | "limit", position: 0 | 1) {
 	try {
 		if (type === "market") {
 			const slippage = Math.round(0.05 * 1_000_000);
+			console.log(
+				`[Trade] market order: marketAppId=${m.marketAppId}, pos=${position}, price=${defaultPrice}, qty=${quantity}, amount=${amount}, yesProb=${m.yesProb}, noProb=${m.noProb}`,
+			);
 			const result = await app.callServerTool({
 				name: "alpha_create_market_order",
 				arguments: {
