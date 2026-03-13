@@ -181,9 +181,16 @@ export function registerAlphaArcadeTools(
 	// Widget registrations
 	// ------------------------------------------
 
-	// Alpha markets reference real-world events — images come from arbitrary
-	// news / media domains so we allow all origins for img-src.
-	const alphaImageDomains = ["*"];
+	// Images are proxied through our own worker domain so all MCP hosts
+	// can load them regardless of CSP resourceDomains support for wildcards.
+	const PROXY_ORIGIN = "https://algorandmcplite.goplausible.xyz";
+	const alphaImageDomains = [PROXY_ORIGIN];
+
+	/** Rewrite an image URL to go through our image proxy */
+	function proxyImageUrl(url?: string): string | undefined {
+		if (!url) return undefined;
+		return `${PROXY_ORIGIN}/api/image-proxy?url=${encodeURIComponent(url)}`;
+	}
 
 	registerWidget(server, assets, {
 		name: "alpha-markets-widget",
@@ -291,7 +298,7 @@ export function registerAlphaArcadeTools(
 						id: m.id,
 						title: m.title || `Market ${m.marketAppId}`,
 						marketAppId: m.marketAppId,
-						image: m.image || undefined,
+						image: proxyImageUrl(m.image),
 						yesAssetId: m.yesAssetId || undefined,
 						noAssetId: m.noAssetId || undefined,
 						yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
@@ -370,7 +377,7 @@ export function registerAlphaArcadeTools(
 						id: m.id,
 						title: m.title || `Market ${m.marketAppId}`,
 						marketAppId: m.marketAppId,
-						image: m.image || undefined,
+						image: proxyImageUrl(m.image),
 						yesAssetId: m.yesAssetId || undefined,
 						noAssetId: m.noAssetId || undefined,
 						yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
@@ -484,10 +491,11 @@ export function registerAlphaArcadeTools(
 				console.log(
 					`[Alpha] alpha_get_market — success, title="${market.title}", image="${market.image}", categories=${JSON.stringify(market.categories)}, source="${market.source}"`,
 				);
+				const proxied = { ...market, image: proxyImageUrl(market.image) };
 				return {
-					content: [{ type: "text" as const, text: JSON.stringify(market, null, 2) }],
+					content: [{ type: "text" as const, text: JSON.stringify(proxied, null, 2) }],
 					structuredContent: {
-						marketDetailData: market,
+						marketDetailData: proxied,
 					},
 				};
 			} catch (error: any) {
