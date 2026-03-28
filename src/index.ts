@@ -1,8 +1,7 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
 import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
-import { type Env, type State, type Props, VaultResponse } from './types';
+import { type Env, type State, type Props } from './types';
 import { ResponseProcessor } from './utils';
 import OAuthProvider from "./oauth-provider";
 import { OauthHandler } from "./oauth-handler";
@@ -66,14 +65,15 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		// Set default page size or use from state if available
 		const itemsPerPage = this.state?.items_per_page || 10;
 		ResponseProcessor.setItemsPerPage(itemsPerPage);
-		// Ensure user has a vault-based account 
+		// Ensure user has a vault-based account
+		const props = this.props;
 		try {
-			if (!this.props.email || !this.props.provider) {
+			if (!props?.email || !props?.provider) {
 				throw new Error('Email and provider must be provided in props');
 			}
-			console.log(`Ensuring user account for ${this.props.email} with provider ${this.props.provider}`);
-			const accType = await ensureUserAccount(this.env, this.props.email, this.props.provider);
-			console.log(`User ${this.props.email} has a ${accType}-based account on ${this.props.provider} provider`);
+			console.log(`Ensuring user account for ${props.email} with provider ${props.provider}`);
+			const accType = await ensureUserAccount(this.env, props.email, props.provider);
+			console.log(`User ${props.email} has a ${accType}-based account on ${props.provider} provider`);
 		} catch (error: any) {
 			throw new Error(`Failed to ensure user account: ${error.message || 'Unknown error'}`);
 		}
@@ -121,7 +121,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerSkillResources() {
 		// Register skill resources for agent usage guidance
-		registerSkillResource(this.server, this.env, this.props);
+		registerSkillResource(this.server, this.env, this.props!);
 	}
 
 	/**
@@ -129,7 +129,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerBasicUtilityTools() {
 		// Register Algorand utility tools
-		registerUtilityTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerUtilityTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	/**
@@ -137,7 +137,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerAccountTools() {
 		// Register all account-related tools
-		registerAccountTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerAccountTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	/**
@@ -145,16 +145,16 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private async registerTransactionTools() {
 		// Register payment transaction tools
-		await registerGeneralTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
+		await registerGeneralTransactionTools(this.server, this.env, this.props!, this.env.ASSETS);
 
 		// Register asset transaction tools
-		registerAssetTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerAssetTransactionTools(this.server, this.env, this.props!, this.env.ASSETS);
 
 		// Register application transaction tools
 		// registerAppTransactionTools(this.server, this.env, this.props);
 
 		// Register group transaction tools
-		registerGroupTransactionTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerGroupTransactionTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	/**
@@ -162,7 +162,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerAlgodTools() {
 		// Register algod tools for TEAL compilation and simulation
-		registerAlgodTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerAlgodTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	/**
@@ -170,14 +170,14 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerArc26Tools() {
 		// Register ARC-26 URI generation tools
-		registerArc26Tools(this.server, this.env, this.props, this.env.ASSETS);
+		registerArc26Tools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	/**
 	 * Register Receipt URI generation tools
 	 */
 	private registerReceiptTools() {
 		// Register ARC-26 URI generation tools
-		registerReceiptTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerReceiptTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	/**
@@ -185,7 +185,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerApiTools() {
 		// Register external API integration tools (pass ASSETS for widget UI)
-		registerApiTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerApiTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
 	// /**
@@ -201,14 +201,14 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private async registerWalletTools() {
 		// Register wallet management tools (pass ASSETS for widget UI)
-		await registerWalletTools(this.server, this.env, this.props, this.env.ASSETS);
+		await registerWalletTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	/**
 	 * Register AP2 tools 
 	 */
 	private async registerAp2Tools() {
 		// Register AP2 mandate tools
-		await registerAp2Tools(this.server, this.env, this.props, this.env.ASSETS);
+		await registerAp2Tools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	/**
 	 * Register Wallet tools for wallet information access
@@ -217,7 +217,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 * Register Alpha Arcade prediction market tools
 	 */
 	private registerAlphaArcadeTools() {
-		registerAlphaArcadeTools(this.server, this.env, this.props, this.env.ASSETS);
+		registerAlphaArcadeTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	// private async registerTinymanTools() {
 	// 	// Register wallet management tools

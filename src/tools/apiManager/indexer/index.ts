@@ -37,7 +37,7 @@ export function registerIndexerApiTools(server: McpServer, env: Env, assets?: As
       description: 'Search the Algorand indexer for accounts, transactions, assets, or applications',
       inputSchema: {
         type: z.enum(['accounts', 'transactions', 'assets', 'applications']).describe('Type of entity to search'),
-        query: z.record(z.any()).describe('Query parameters'),
+        query: z.record(z.string(), z.any()).describe('Query parameters'),
         limit: z.number().int().min(1).max(1000).default(100).describe('Max number of results'),
         pageToken: z.string().optional().describe('Pagination token for paginated results')
       },

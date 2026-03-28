@@ -413,6 +413,11 @@ export interface State {
 export interface Env {
 
   /**
+   * Durable Object binding required by agents McpAgent
+   */
+  MCP_OBJECT: DurableObjectNamespace<any>;
+
+  /**
    * Static assets binding for MCP Apps UI widgets
    */
   ASSETS?: { fetch: (request: Request | string) => Promise<Response> };
