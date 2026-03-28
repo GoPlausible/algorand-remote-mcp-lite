@@ -28,7 +28,7 @@ interface TxnHistoryData {
   address: string;
   transactions: Transaction[];
   totalTransactions: number;
-  indexerNextToken: string | null;
+  'next-token': string | null;
 }
 
 interface TxnHistoryStructuredContent {
@@ -36,7 +36,7 @@ interface TxnHistoryStructuredContent {
   address?: string;
   transactions?: Transaction[];
   totalTransactions?: number;
-  indexerNextToken?: string | null;
+  'next-token'?: string | null;
 }
 
 // Track state for pagination — accumulate all loaded transactions
@@ -94,7 +94,7 @@ function extractData(sc: TxnHistoryStructuredContent): TxnHistoryData | null {
       address: sc.address,
       transactions: sc.transactions,
       totalTransactions: sc.totalTransactions ?? sc.transactions.length,
-      indexerNextToken: sc.indexerNextToken ?? null,
+      'next-token': sc['next-token'] ?? null,
     };
   }
   return null;
@@ -357,7 +357,7 @@ async function loadMoreTransactions() {
       if (data) {
         // Accumulate transactions
         allTransactions = [...allTransactions, ...data.transactions];
-        currentNextToken = data.indexerNextToken;
+        currentNextToken = data['next-token'];
         root.innerHTML = renderTxnHistory(currentAddress!, allTransactions, currentNextToken);
         attachLoadMoreHandler();
         attachFilterHandlers();
@@ -428,7 +428,7 @@ app.ontoolresult = (result: CallToolResult) => {
     if (data) {
       currentAddress = data.address;
       allTransactions = data.transactions;
-      currentNextToken = data.indexerNextToken;
+      currentNextToken = data['next-token'];
       root.innerHTML = renderTxnHistory(data.address, allTransactions, currentNextToken);
       attachLoadMoreHandler();
       attachFilterHandlers();

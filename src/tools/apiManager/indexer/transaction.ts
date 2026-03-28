@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -106,7 +107,7 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
   }
 
   // Lookup transaction by ID (with LORA-style flow diagram UI)
-  server.registerTool(
+  registerAppTool(server,
     'indexer_lookup_transaction_by_id',
     {
       description: 'Get transaction details or all transactions in an atomic group from the indexer with flow visualization',
@@ -117,7 +118,6 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
       },
       _meta: {
         ui: { resourceUri: txnDetailResourceUri },
-        'ui/resourceUri': txnDetailResourceUri,
       },
     },
     async ({ txid, groupId, pageToken }) => {
@@ -141,9 +141,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
           const typeCounts: Record<string, number> = {};
           for (const t of transactions) typeCounts[t.type] = (typeCounts[t.type] || 0) + 1;
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, group: groupId.slice(0, 12), transactionCount: transactions.length, confirmedRound }, null, 2) }],
+            content: [{ type: 'text' as const, text: JSON.stringify({ group: groupId.slice(0, 12), transactionCount: transactions.length, confirmedRound }, null, 2) }],
             structuredContent: {
-              structuredData: true,
               txnGroup: { groupId, transactions, totalFee, confirmedRound, roundTime, typeCounts },
             },
           };
@@ -181,9 +180,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
         const textResponse = ResponseProcessor.processResponse(response, pageToken);
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          content: textResponse.content,
           structuredContent: {
-            structuredData: true,
             txnDetail: { transaction },
           },
         };
@@ -199,7 +197,7 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
   );
   
   // Lookup account transactions (with UI)
-  server.registerTool(
+  registerAppTool(server,
     'indexer_lookup_account_transactions',
     {
       description: 'Get transactions related to an account',
@@ -221,7 +219,6 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
       },
       _meta: {
         ui: { resourceUri: txnHistoryResourceUri },
-        'ui/resourceUri': txnHistoryResourceUri,
       },
     },
     async ({ address, limit, txType, sigType, assetId, beforeTime, afterTime,
@@ -318,13 +315,13 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
         });
 
         // Pass indexer's native next-token for real pagination across full transaction history
-        const indexerNextToken = response['next-token'] ?? response.nextToken ?? null;
+        const indexerNextToken = (response as any)['next-token'] ?? null;
 
         const txnHistory = {
           address,
           transactions: allTxns,
           totalTransactions: allTxns.length,
-          indexerNextToken: indexerNextToken ? String(indexerNextToken) : null,
+          'next-token': indexerNextToken ? String(indexerNextToken) : null,
         };
 
         // Build text fallback — use a lightweight summary instead of processing the full raw response
@@ -337,8 +334,8 @@ export function registerIndexerTransactionTools(server: McpServer, env: Env, ass
           textContent = JSON.stringify({ address, transactionCount: allTxns.length });
         }
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, txnHistory },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { txnHistory },
         };
       } catch (error: any) {
         return {

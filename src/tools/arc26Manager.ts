@@ -7,6 +7,7 @@ import { PhotonImage, resize, watermark, SamplingFilter } from "@cf-wasm/photon"
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import { generate } from '@juit/qrcode'
@@ -336,7 +337,8 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
     resourceDomains: ['goplausible.xyz'],
   });
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'generate_algorand_qrcode',
     {
       description: 'Generate a URI and QRCode of it, following the Algorand ARC-26 specification to send account address or request payment or asset transfer',
@@ -349,7 +351,6 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
       },
       _meta: {
         ui: { resourceUri: qrCodeResourceUri },
-        'ui/resourceUri': qrCodeResourceUri,
       },
     },
     async ({ address, amount, decimals, assetId, note }) => {
@@ -396,9 +397,8 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
         });
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          content: textResponse.content,
           structuredContent: {
-            structuredData: true,
             qrData: {
               uriType,
               uri,

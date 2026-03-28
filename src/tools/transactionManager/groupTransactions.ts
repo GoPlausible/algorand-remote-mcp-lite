@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../../types';
 import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import { signWithTransit, getPublicKey/* , ensureUserAccount */ } from '../../utils/vaultManager';
@@ -222,7 +223,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   });
 
   // Assign group ID to transactions
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_assign_group_id',
     {
       description: 'To group transactions in atomic way (one fails all fail), assign a group ID to a set of transactions for atomic execution',
@@ -231,7 +233,6 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: groupIdCardResourceUri },
-        'ui/resourceUri': groupIdCardResourceUri,
       },
     },
     async ({ encodedTxns }) => {
@@ -257,8 +258,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         const groupId = Buffer.from(decodedTxns[0].group!).toString('base64');
         const groupIdResult = { groupId, txnCount: groupedTxns.length };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, groupIdResult, groupedTxns }, null, 2) }],
-          structuredContent: { structuredData: true, groupIdResult },
+          content: [{ type: 'text' as const, text: JSON.stringify({ groupIdResult, groupedTxns }, null, 2) }],
+          structuredContent: { groupIdResult },
         };
       } catch (error: any) {
         return {
@@ -281,7 +282,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   });
 
   // Create atomic transaction group
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_create_atomic_group',
     {
       description: 'Create an atomic transaction group from multiple transactions of types pay, axfer, acfg, appl, afrz or keyreg',
@@ -293,7 +295,6 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: atomicGroupCardResourceUri },
-        'ui/resourceUri': atomicGroupCardResourceUri,
       },
     },
     async ({ transactions }) => {
@@ -342,8 +343,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
         const textResponse = ResponseProcessor.processResponse(responseData);
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
-          structuredContent: { structuredData: true, atomicGroupResult },
+          content: textResponse.content,
+          structuredContent: { atomicGroupResult },
         };
       } catch (error: any) {
         return {
@@ -357,7 +358,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // Atomic transaction signing helper
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_sign_atomic_group',
     {
       description: 'Sign an atomic transaction group. This is the default way of signing transaction groups by agents using this MCP. This uses the vault account binding to user OAuth account used to authenticate user to this MCP.',
@@ -367,7 +369,6 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: walletSignResourceUri },
-        'ui/resourceUri': walletSignResourceUri,
       },
     },
     async ({ encodedTxns, keyName }) => {
@@ -464,8 +465,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
         // Return signed transactions with structuredContent for widget
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, signedTxns: signatures, message: 'Transactions signed securely using vault keys' }, null, 2) }],
-          structuredContent: { structuredData: true, signResult: { signedCount: signatures.length, signerType: 'wallet' }, signedTxns: signatures },
+          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed securely using vault keys' }, null, 2) }],
+          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'wallet' }, signedTxns: signatures },
         };
       } catch (error: any) {
         return {
@@ -479,7 +480,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // SDK-based atomic transaction group signing with mnemonic
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_sign_atomic_group',
     {
       description: 'Sign an atomic transaction group with an Algorand account mnemonic. Used for user testing with a mnemonic instead of using the embedded Vault based wallet accounts which are default to this MCP. Use only if explicitly asked by user to sign a transaction group using mnemonic!',
@@ -489,7 +491,6 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: sdkSignResourceUri },
-        'ui/resourceUri': sdkSignResourceUri,
       },
     },
     async ({ encodedTxns, mnemonic }) => {
@@ -523,8 +524,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
         // Return signed transactions with structuredContent for widget
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, signedTxns: signatures, message: 'Transactions signed using mnemonic-derived account' }, null, 2) }],
-          structuredContent: { structuredData: true, signResult: { signedCount: signatures.length, signerType: 'sdk' }, signedTxns: signatures },
+          content: [{ type: 'text' as const, text: JSON.stringify({ signedTxns: signatures, message: 'Transactions signed using mnemonic-derived account' }, null, 2) }],
+          structuredContent: { signResult: { signedCount: signatures.length, signerType: 'sdk' }, signedTxns: signatures },
         };
       } catch (error: any) {
         return {
@@ -538,7 +539,8 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
   );
 
   // Submit atomic transaction group
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_submit_atomic_group',
     {
       description: 'Submit a signed atomic transaction group to the Algorand network',
@@ -547,7 +549,6 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: txnSubmitResourceUri },
-        'ui/resourceUri': txnSubmitResourceUri,
       },
     },
     async ({ signedTxns }) => {
@@ -634,10 +635,9 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
           explorerUrl,
         };
 
-        const textContent = JSON.stringify({ structuredData: true, confirmed: true, groupReceipt }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, groupReceipt },
+          content: [{ type: 'text' as const, text: JSON.stringify(groupReceipt, null, 2) }],
+          structuredContent: { groupReceipt },
         };
       } catch (error: any) {
         return {

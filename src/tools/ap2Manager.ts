@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 // import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type {
   Env, Props, VaultResponse,
 } from '../types';
@@ -248,7 +249,8 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
   });
 
   // Generate AP2 mandate tool
-  server.registerTool(
+  registerAppTool(
+    server,
     'generate_ap2_mandate',
     {
       description: 'Create an AP2 intent, cart or payment mandate for AP2 process and flow using fields: id, type (mandate type), items, total, currency, merchant_public_key, payment_requirements, merchant_agent (id) and cart_request_id then returns an stringified object containing verifiableCredential and verifiableCredentialLink.',
@@ -296,7 +298,6 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
       },
       _meta: {
         ui: { resourceUri: mandateCardResourceUri },
-        'ui/resourceUri': mandateCardResourceUri,
       },
     },
     async ({ mandate }) => {
@@ -465,14 +466,12 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
-              structuredData: true,
               verifiableCredentialLink: key,
               type: type,
               verifiableCredential: verifiableCredential
             }, null, 2)
           }],
           structuredContent: {
-            structuredData: true,
             mandate: {
               type: mandate.type,
               id: mandate.id,

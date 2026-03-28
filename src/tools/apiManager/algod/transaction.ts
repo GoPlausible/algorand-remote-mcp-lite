@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -36,7 +37,7 @@ export function registerTransactionApiTools(server: McpServer, env: Env, assets?
   });
 
   // Get transaction information by ID
-  server.registerTool(
+  registerAppTool(server,
     'algod_get_pending_txn_info',
     {
       description: 'Get transaction details from algod by transaction ID',
@@ -45,7 +46,6 @@ export function registerTransactionApiTools(server: McpServer, env: Env, assets?
       },
       _meta: {
         ui: { resourceUri: pendingTxnResourceUri },
-        'ui/resourceUri': pendingTxnResourceUri,
       },
     },
     async ({ txid }) => {
@@ -114,7 +114,7 @@ export function registerTransactionApiTools(server: McpServer, env: Env, assets?
         }
         return {
           content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, pendingTxn },
+          structuredContent: { pendingTxn },
         };
       } catch (error: any) {
         return {

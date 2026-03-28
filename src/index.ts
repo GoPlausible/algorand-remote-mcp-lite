@@ -1,6 +1,7 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { type Env, type State, type Props, VaultResponse } from './types';
 import { ResponseProcessor } from './utils';
 import OAuthProvider from "./oauth-provider";
@@ -77,6 +78,13 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 			throw new Error(`Failed to ensure user account: ${error.message || 'Unknown error'}`);
 		}
 
+		// Set up UI capability detection
+		this.server.server.oninitialized = () => {
+			const caps = this.server.server.getClientCapabilities();
+			const uiCap = getUiCapability(caps as any);
+			const hasUi = !!uiCap?.mimeTypes?.includes(RESOURCE_MIME_TYPE);
+			console.log(`[MCP] Client UI capable: ${hasUi}`);
+		};
 
 		// Register resources
 		// this.registerKnowledgeResources();

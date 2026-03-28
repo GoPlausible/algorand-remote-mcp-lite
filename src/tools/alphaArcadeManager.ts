@@ -8,6 +8,7 @@ import * as algosdk from "algosdk";
 import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from "../types";
 import { type AssetsBinding, registerWidget } from "../ui/widgetManager";
 import { getPublicKey, signWithTransit } from "../utils/vaultManager";
@@ -320,7 +321,7 @@ export function registerAlphaArcadeTools(
 	// Read-only tools
 	// ------------------------------------------
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_live_markets",
 		{
 			description:
@@ -410,7 +411,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_reward_markets",
 		{
 			description:
@@ -491,7 +492,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_market",
 		{
 			description:
@@ -571,7 +572,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_orderbook",
 		{
 			description:
@@ -668,7 +669,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_open_orders",
 		{
 			description:
@@ -723,7 +724,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_get_positions",
 		{
 			description:
@@ -774,7 +775,7 @@ export function registerAlphaArcadeTools(
 	// Write tools (require vault wallet)
 	// ------------------------------------------
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_create_limit_order",
 		{
 			description:
@@ -848,7 +849,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_create_market_order",
 		{
 			description:
@@ -937,7 +938,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_cancel_order",
 		{
 			description:
@@ -988,7 +989,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_amend_order",
 		{
 			description:
@@ -1050,7 +1051,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_propose_match",
 		{
 			description:
@@ -1107,7 +1108,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_split_shares",
 		{
 			description:
@@ -1149,7 +1150,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_merge_shares",
 		{
 			description:
@@ -1189,7 +1190,7 @@ export function registerAlphaArcadeTools(
 		},
 	);
 
-	server.registerTool(
+	registerAppTool(server,
 		"alpha_claim",
 		{
 			description:

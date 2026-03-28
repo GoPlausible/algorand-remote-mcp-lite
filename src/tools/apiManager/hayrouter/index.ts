@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import * as algosdk from 'algosdk';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env, Props } from '../../../types';
 import { getRouterClient } from './routerClient';
@@ -50,7 +51,7 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
   });
 
   // Get swap quote
-  server.registerTool(
+  registerAppTool(server,
     'haystack_get_swap_quote',
     {
       description: 'Get an optimized swap quote from Haystack Router — a DEX aggregator that finds the best swap route across multiple Algorand DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO). Returns the best-price quote with route details, USD values, and price impact. All amounts are in base units (e.g., 1000000 = 1 ALGO).',
@@ -65,7 +66,6 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
       },
       _meta: {
         ui: { resourceUri: swapQuoteResourceUri },
-        'ui/resourceUri': swapQuoteResourceUri,
       },
     },
     async ({ fromASAID, toASAID, amount, type, address, maxGroupSize, maxDepth }) => {
@@ -120,8 +120,8 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, swapQuote: safeResult },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { swapQuote: safeResult },
         };
       } catch (error: any) {
         return {
@@ -135,7 +135,7 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
   );
 
   // Execute swap
-  server.registerTool(
+  registerAppTool(server,
     'haystack_execute_swap',
     {
       description: 'Execute an optimized token swap via Haystack Router — gets the best route across multiple DEXes (Tinyman V2, Pact, Folks) and LST protocols, then signs with the vault wallet and submits. This is an all-in-one tool: quote → sign → submit → confirm. All amounts are in base units.',
@@ -151,7 +151,6 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
       },
       _meta: {
         ui: { resourceUri: swapResultResourceUri },
-        'ui/resourceUri': swapResultResourceUri,
       },
     },
     async ({ fromASAID, toASAID, amount, slippage, type, note, maxGroupSize, maxDepth }) => {
@@ -283,10 +282,10 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
         const swapResult = JSON.parse(JSON.stringify(response, (_k, v) =>
           typeof v === 'bigint' ? v.toString() : v
         ));
-        const textContent = JSON.stringify({ structuredData: true, swapResult }, null, 2);
+        const textContent = JSON.stringify({ swapResult }, null, 2);
         return {
           content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, swapResult },
+          structuredContent: { swapResult },
         };
       } catch (error: any) {
         return {

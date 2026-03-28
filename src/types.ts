@@ -400,6 +400,11 @@ export interface State {
    * Number of items to show per page
    */
   items_per_page: number;
+
+  /**
+   * Whether the connected client supports MCP Apps UI
+   */
+  uiCapable?: boolean;
 }
 
 /**

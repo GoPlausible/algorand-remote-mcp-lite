@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -84,7 +85,7 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
   });
 
   // Lookup asset balances
-  server.registerTool(
+  registerAppTool(server,
     'indexer_lookup_asset_balances',
     {
       description: 'Get accounts that hold a specific asset',
@@ -98,7 +99,6 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
       },
       _meta: {
         ui: { resourceUri: assetHoldersResourceUri },
-        'ui/resourceUri': assetHoldersResourceUri,
       },
     },
     async ({ assetId, limit, currencyGreaterThan, currencyLessThan, nextToken, pageToken }) => {
@@ -154,14 +154,13 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: {
-            structuredData: true,
             assetHolders: {
               assetId,
               balances,
               totalHolders: balances.length,
-              nextToken: response.nextToken || null,
+              'next-token': (response as any)['next-token'] || null,
             }
           },
         };
@@ -177,7 +176,7 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
   );
   
   // Search for assets
-  server.registerTool(
+  registerAppTool(server,
     'indexer_search_for_assets',
     {
       description: 'Search for assets with various criteria',
@@ -191,7 +190,6 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
       },
       _meta: {
         ui: { resourceUri: assetSearchIndexerResourceUri },
-        'ui/resourceUri': assetSearchIndexerResourceUri,
       },
     },
     async ({ name, unit, creator, limit, nextToken, pageToken }) => {
@@ -258,13 +256,12 @@ export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: 
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: {
-            structuredData: true,
             assetSearch: {
               assets: assetsList,
               totalAssets: assetsList.length,
-              nextToken: response.nextToken || null,
+              'next-token': (response as any)['next-token'] || null,
               filters: { name, unit, creator },
             }
           },

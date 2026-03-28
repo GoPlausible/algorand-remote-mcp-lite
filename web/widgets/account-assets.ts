@@ -20,7 +20,7 @@ interface AccountAssetsData {
   address: string;
   assets: AccountAsset[];
   totalAssets: number;
-  nextToken: string | null;
+  'next-token': string | null;
 }
 
 interface AccountAssetsStructuredContent {
@@ -29,7 +29,7 @@ interface AccountAssetsStructuredContent {
   address?: string;
   assets?: AccountAsset[];
   totalAssets?: number;
-  nextToken?: string | null;
+  'next-token'?: string | null;
 }
 
 // Filter/sort state
@@ -49,7 +49,7 @@ function extractData(sc: AccountAssetsStructuredContent): AccountAssetsData | nu
       address: sc.address,
       assets: sc.assets,
       totalAssets: sc.totalAssets ?? sc.assets.length,
-      nextToken: sc.nextToken ?? null,
+      'next-token': sc['next-token'] ?? null,
     };
   }
   return null;
@@ -141,7 +141,7 @@ function renderAccountAssets(data: AccountAssetsData): string {
           </tbody>
         </table>
       </div>
-      ${data.nextToken ? '<div class="aa-more-indicator">More assets available</div>' : ""}
+      ${data['next-token'] ? '<div class="aa-more-indicator">More assets available</div>' : ""}
     </div>
   `;
 }

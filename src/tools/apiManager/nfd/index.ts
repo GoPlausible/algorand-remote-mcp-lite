@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -26,7 +27,7 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
   });
 
   // Get NFD by name (with account info and UI)
-  server.registerTool(
+  registerAppTool(server,
     'api_nfd_get_nfd',
     {
       description: 'Get NFD domain information by name, including the linked Algorand account balance and assets',
@@ -38,7 +39,6 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
       },
       _meta: {
         ui: { resourceUri: nfdCardResourceUri },
-        'ui/resourceUri': nfdCardResourceUri,
       },
     },
     async ({ name, view, includeSales, pageToken }) => {
@@ -152,8 +152,8 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, nfdAccount },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { nfdAccount },
         };
       } catch (error: any) {
         return {
@@ -177,7 +177,7 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
   });
 
   // Get NFDs for address
-  server.registerTool(
+  registerAppTool(server,
     'api_nfd_get_nfds_for_address',
     {
       description: 'Get all NFD names owned by an Algorand address',
@@ -189,7 +189,6 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
       },
       _meta: {
         ui: { resourceUri: nfdListResourceUri },
-        'ui/resourceUri': nfdListResourceUri,
       },
     },
     async ({ address, limit, offset, view }) => {
@@ -230,9 +229,8 @@ export function registerNfdApiTools(server: McpServer, env: Env, assets?: Assets
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: {
-            structuredData: true,
             nfdList: {
               address,
               nfds: nfds.map((nfd: any) => ({

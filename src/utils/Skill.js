@@ -12,9 +12,11 @@ Read and learn these skills and instructions to define your capabilities, workfl
 
 ### **CRITICAL** Algorand MCP Response Handling Rules
 
-1. When \`structuredData: true\`is present, do NOT repeat, reformat, or summarize the \`content\` text — the user already sees the UI card inline, so just inform the user that a UI widget is available in supported clients. Just ask if they want the raw data too.
-3. Only fall back to parsing/displaying \`content\` text if \`structuredData: true\` is absent.
-4. If the user explicitly asks for raw data, display the \`content\` text.
+This server uses the MCP Apps SDK (\`@modelcontextprotocol/ext-apps\`). 55 tools are registered as App tools via \`registerAppTool()\` with \`_meta.ui.resourceUri\` linking each to an HTML widget. 4 plain utility tools have no UI.
+
+1. **UI-capable hosts**: The widget renders inline as the complete response. Do NOT repeat, reformat, or summarize the \`content\` text — the widget IS the response. Simply confirm the action succeeded.
+2. **Text-only clients**: The \`content\` text fallback is shown automatically — no special handling needed.
+3. If the user explicitly asks for raw data, display the \`content\` text.
 
 ### Security Rules
 

@@ -8,6 +8,7 @@ import * as algosdk from 'algosdk';
 
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../../types';
 import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import {
@@ -95,7 +96,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // }
 
   // Create payment transaction tool
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_txn_payment_transaction',
     {
       description: 'Create a payment transaction on Algorand',
@@ -110,7 +112,6 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
       },
       _meta: {
         ui: { resourceUri: txnConfirmResourceUri },
-        'ui/resourceUri': txnConfirmResourceUri,
       },
     },
     async ({ sender, receiver, amount, note, closeRemainderTo, rekeyTo, fee }) => {
@@ -163,10 +164,9 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
           firstValid: Number(params.firstValid),
           lastValid: Number(params.lastValid),
         };
-        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnConfirm },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
         };
       } catch (error: any) {
         return {
@@ -180,7 +180,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   );
 
   // Sign transaction with user's credentials
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_sign_transaction',
     {
       description: 'Sign an Algorand transaction with your agent account',
@@ -189,7 +190,6 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
       },
       _meta: {
         ui: { resourceUri: walletSignResourceUri },
-        'ui/resourceUri': walletSignResourceUri,
       },
     },
     async ({ encodedTxn }) => {
@@ -244,8 +244,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         const txID = txn.txID();
         const signedTxnB64 = Buffer.from(encodedSignedTxn).toString('base64');
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, txID, signedTxn: signedTxnB64 }, null, 2) }],
-          structuredContent: { structuredData: true, signResult: { txID, signedCount: 1, signerType: 'wallet' }, signedTxn: signedTxnB64 },
+          content: [{ type: 'text' as const, text: JSON.stringify({ txID, signedTxn: signedTxnB64 }, null, 2) }],
+          structuredContent: { signResult: { txID, signedCount: 1, signerType: 'wallet' }, signedTxn: signedTxnB64 },
         };
 
 
@@ -369,7 +369,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // );
 
   // Submit signed transaction
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_submit_transaction',
     {
       description: 'Submit a signed transaction to the Algorand network',
@@ -378,7 +379,6 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
       },
       _meta: {
         ui: { resourceUri: txnSubmitResourceUri },
-        'ui/resourceUri': txnSubmitResourceUri,
       },
     },
     async ({ signedTxn }) => {
@@ -453,10 +453,9 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
           explorerUrl,
         };
 
-        const textContent = JSON.stringify({ structuredData: true, confirmed: true, txnReceipt }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnReceipt },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnReceipt, null, 2) }],
+          structuredContent: { txnReceipt },
         };
       } catch (error: any) {
         return {

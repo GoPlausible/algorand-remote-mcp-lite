@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 
@@ -25,7 +26,8 @@ export function registerAccountTools(server: McpServer, env: Env, props: Props, 
   });
 
   // Check account balance
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_check_account_balance',
     {
       description: 'Check the balance of an Algorand account',
@@ -34,7 +36,6 @@ export function registerAccountTools(server: McpServer, env: Env, props: Props, 
       },
       _meta: {
         ui: { resourceUri: balanceCardResourceUri },
-        'ui/resourceUri': balanceCardResourceUri,
       },
     },
     async ({ address }) => {
@@ -66,8 +67,8 @@ export function registerAccountTools(server: McpServer, env: Env, props: Props, 
 
         const textResponse = ResponseProcessor.processResponse(balanceData);
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
-          structuredContent: { structuredData: true, balanceData },
+          content: textResponse.content,
+          structuredContent: { balanceData },
         };
       } catch (error: any) {
         return {

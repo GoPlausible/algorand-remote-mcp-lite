@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../../types';
 import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import {
@@ -48,7 +49,8 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
   // but we still need the URI for _meta
 
   // Create a new Algorand Standard Asset (ASA)
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_create',
     {
       description: 'Create a new Algorand Standard Asset (ASA)',
@@ -69,7 +71,6 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: txnConfirmResourceUri },
-        'ui/resourceUri': txnConfirmResourceUri,
       },
     },
     async ({ creator, name, unitName, totalSupply, decimals, defaultFrozen,
@@ -143,10 +144,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           firstValid: Number(params.firstValid),
           lastValid: Number(params.lastValid),
         };
-        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnConfirm },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
         };
       } catch (error: any) {
         return {
@@ -160,7 +160,8 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
   );
 
   // Opt-in to an asset
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_optin',
     {
       description: 'Opt-in to an Algorand Standard Asset (ASA)',
@@ -171,7 +172,6 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: txnConfirmResourceUri },
-        'ui/resourceUri': txnConfirmResourceUri,
       },
     },
     async ({ address, assetID, note }) => {
@@ -223,10 +223,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           firstValid: Number(params.firstValid),
           lastValid: Number(params.lastValid),
         };
-        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnConfirm },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
         };
       } catch (error: any) {
         return {
@@ -239,7 +238,8 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
     }
   );
   // Opt-in to USDC
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_usdc_optin',
     {
       description: 'Opt-in agent wallet to USDC',
@@ -248,7 +248,6 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: txnConfirmResourceUri },
-        'ui/resourceUri': txnConfirmResourceUri,
       },
     },
     async ({ note }) => {
@@ -323,10 +322,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           lastValid: Number(params.lastValid),
           submitted: true,
         };
-        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnConfirm },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
         };
       } catch (error: any) {
         return {
@@ -340,7 +338,8 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
   );
 
   // Transfer asset
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_transfer',
     {
       description: 'Transfer an Algorand Standard Asset (ASA)',
@@ -353,7 +352,6 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
       },
       _meta: {
         ui: { resourceUri: txnConfirmResourceUri },
-        'ui/resourceUri': txnConfirmResourceUri,
       },
     },
     async ({ sender, receiver, assetID, amount, note }) => {
@@ -407,10 +405,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           firstValid: Number(params.firstValid),
           lastValid: Number(params.lastValid),
         };
-        const textContent = JSON.stringify({ structuredData: true, txnConfirm }, null, 2);
         return {
-          content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, txnConfirm },
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
         };
       } catch (error: any) {
         return {

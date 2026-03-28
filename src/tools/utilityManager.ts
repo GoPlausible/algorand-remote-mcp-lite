@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { skill } from '../utils/Skill.js';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
@@ -35,7 +36,8 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
   });
 
   // Validate address
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_validate_address',
     {
       description: 'Check if an Algorand address is valid',
@@ -44,7 +46,6 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
       },
       _meta: {
         ui: { resourceUri: addressValidateResourceUri },
-        'ui/resourceUri': addressValidateResourceUri,
       },
     },
     async ({ address }) => {
@@ -52,8 +53,8 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
         const isValid = algosdk.isValidAddress(address);
         const validationResult = { address, isValid };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, validationResult }, null, 2) }],
-          structuredContent: { structuredData: true, validationResult },
+          content: [{ type: 'text' as const, text: JSON.stringify(validationResult, null, 2) }],
+          structuredContent: { validationResult },
         };
       } catch (error: any) {
         return {
@@ -118,7 +119,8 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
   );
   
   // Get application address
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_app_address_by_id',
     {
       description: 'Get the address for a given application ID',
@@ -127,7 +129,6 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
       },
       _meta: {
         ui: { resourceUri: appAddressResourceUri },
-        'ui/resourceUri': appAddressResourceUri,
       },
     },
     async ({ appId }) => {
@@ -139,8 +140,8 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
           : `https://testnet.allo.info/account/${address}`;
         const appAddress = { appId, address, explorerUrl };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, appAddress }, null, 2) }],
-          structuredContent: { structuredData: true, appAddress },
+          content: [{ type: 'text' as const, text: JSON.stringify(appAddress, null, 2) }],
+          structuredContent: { appAddress },
         };
       } catch (error: any) {
         return {

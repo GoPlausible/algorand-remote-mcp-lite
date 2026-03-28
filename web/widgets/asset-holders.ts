@@ -20,7 +20,7 @@ interface AssetHoldersData {
   assetId: number;
   balances: BalanceEntry[];
   totalHolders: number;
-  nextToken: string | null;
+  'next-token': string | null;
 }
 
 interface AssetHoldersStructuredContent {
@@ -29,7 +29,7 @@ interface AssetHoldersStructuredContent {
   assetId?: number;
   balances?: BalanceEntry[];
   totalHolders?: number;
-  nextToken?: string | null;
+  'next-token'?: string | null;
 }
 
 // Filter/sort state
@@ -54,7 +54,7 @@ function extractData(sc: AssetHoldersStructuredContent): AssetHoldersData | null
       assetId: sc.assetId,
       balances: sc.balances,
       totalHolders: sc.totalHolders ?? sc.balances.length,
-      nextToken: sc.nextToken ?? null,
+      'next-token': sc['next-token'] ?? null,
     };
   }
   return null;

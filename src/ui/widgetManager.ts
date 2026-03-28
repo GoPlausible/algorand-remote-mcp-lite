@@ -4,8 +4,9 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 
-export const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
+export { RESOURCE_MIME_TYPE };
 
 export type AssetsBinding = {
   fetch: (request: Request | string) => Promise<Response>;
@@ -51,12 +52,12 @@ export function registerWidget(
   assets: AssetsBinding | undefined,
   config: WidgetConfig,
 ): void {
-  server.registerResource(
+  registerAppResource(
+    server,
     config.name,
     config.resourceUri,
     {
       description: config.description,
-      mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => {
       const htmlContent = await loadHtml(assets, config.htmlPath);

@@ -34,7 +34,7 @@ interface AssetSearchFilters {
 interface AssetSearchData {
   assets: AssetEntry[];
   totalAssets: number;
-  nextToken: string | null;
+  'next-token': string | null;
   filters: AssetSearchFilters;
 }
 
@@ -164,8 +164,8 @@ function renderSearchResults(data: AssetSearchData): string {
     ? renderTable(data.assets)
     : `<div class="asi-empty">No assets found matching the search criteria.</div>`;
 
-  const nextTokenHtml = data.nextToken
-    ? `<div class="asi-footer">More results available (next-token: ${data.nextToken.slice(0, 12)}...)</div>`
+  const nextTokenHtml = data['next-token']
+    ? `<div class="asi-footer">More results available (next-token: ${data['next-token'].slice(0, 12)}...)</div>`
     : "";
 
   return `

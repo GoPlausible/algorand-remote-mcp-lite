@@ -21,7 +21,7 @@ interface AccountResult {
 interface AccountSearchData {
   accounts: AccountResult[];
   totalAccounts: number;
-  nextToken: string | null;
+  'next-token': string | null;
   filters: {
     assetId?: number;
     applicationId?: number;

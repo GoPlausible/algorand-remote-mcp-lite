@@ -5,6 +5,7 @@ import { PhotonImage, resize, watermark, SamplingFilter } from "@cf-wasm/photon"
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import { generate } from '@juit/qrcode'
@@ -264,7 +265,8 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
     resourceDomains: ['goplausible.xyz'],
   });
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'generate_algorand_receipt',
     {
       description: 'Generate a Receipt and QRCode of it, for an Algorand payment or asset transfer',
@@ -278,7 +280,6 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
       },
       _meta: {
         ui: { resourceUri: receiptCardResourceUri },
-        'ui/resourceUri': receiptCardResourceUri,
       },
     },
     async ({ sender, receiver, amount, assetId, note, txId }) => {
@@ -322,9 +323,8 @@ export function registerReceiptTools(server: McpServer, env: Env, props: Props, 
         });
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
+          content: textResponse.content,
           structuredContent: {
-            structuredData: true,
             receipt: {
               sender,
               receiver,

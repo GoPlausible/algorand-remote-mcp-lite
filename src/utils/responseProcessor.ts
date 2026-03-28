@@ -217,21 +217,6 @@ export class ResponseProcessor {
   }
 
   /**
-   * Injects structuredData: true into a JSON text string.
-   * Used at return sites that also return structuredContent, so text-only
-   * clients know a UI widget is available.
-   */
-  static withStructuredFlag(text: string): string {
-    try {
-      const parsed = JSON.parse(text);
-      parsed.structuredData = true;
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return text;
-    }
-  }
-
-  /**
    * Process a response with consistent formatting and pagination
    */
   static processResponse(response: any, pageToken?: string): any {

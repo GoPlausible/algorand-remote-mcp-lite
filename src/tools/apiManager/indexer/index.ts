@@ -8,6 +8,7 @@ import { registerIndexerApplicationTools } from './application';
 import { registerIndexerAssetTools } from './asset';
 import { registerIndexerTransactionTools } from './transaction';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 import { z } from 'zod';
 import { ResponseProcessor } from '../../../utils';
@@ -30,7 +31,7 @@ export function registerIndexerApiTools(server: McpServer, env: Env, assets?: As
   });
 
   // Algorand indexer search tool
-  server.registerTool(
+  registerAppTool(server,
     'indexer_search',
     {
       description: 'Search the Algorand indexer for accounts, transactions, assets, or applications',
@@ -42,7 +43,6 @@ export function registerIndexerApiTools(server: McpServer, env: Env, assets?: As
       },
       _meta: {
         ui: { resourceUri: indexerSearchResourceUri },
-        'ui/resourceUri': indexerSearchResourceUri,
       },
     },
     async ({ type, query, limit, pageToken }) => {
@@ -102,14 +102,13 @@ export function registerIndexerApiTools(server: McpServer, env: Env, assets?: As
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
+          content: [{ type: 'text' as const, text: textContent }],
           structuredContent: {
-            structuredData: true,
             indexerSearch: {
               type,
               results,
               totalResults: results.length,
-              nextToken: data['next-token'] || null,
+              'next-token': data['next-token'] || null,
               query,
             }
           },

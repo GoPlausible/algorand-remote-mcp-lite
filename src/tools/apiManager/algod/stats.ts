@@ -4,6 +4,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -69,14 +70,13 @@ export function registerStatsTools(server: McpServer, env: Env, assets?: AssetsB
     connectDomains: ['https://analytics-api.allo.info'],
   });
 
-  server.registerTool(
+  registerAppTool(server,
     'api_get_algorand_weather',
     {
       description: 'Get Algorand chain weather - stats, metrics, health, consensus, and node status as a weather-themed dashboard',
       inputSchema: {},
       _meta: {
         ui: { resourceUri: weatherResourceUri },
-        'ui/resourceUri': weatherResourceUri,
       },
     },
     async () => {
@@ -244,8 +244,8 @@ export function registerStatsTools(server: McpServer, env: Env, assets?: AssetsB
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, chainWeather },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { chainWeather },
         };
       } catch (error: any) {
         return {

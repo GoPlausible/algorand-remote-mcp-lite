@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -36,7 +37,7 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
   });
 
   // Get account information
-  server.registerTool(
+  registerAppTool(server,
     'algod_get_account_info',
     {
       description: 'Get current account balance, assets, and auth address from algod',
@@ -46,7 +47,6 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
       },
       _meta: {
         ui: { resourceUri: accountCardResourceUri },
-        'ui/resourceUri': accountCardResourceUri,
       },
     },
     async ({ address, pageToken }) => {
@@ -118,8 +118,8 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
           textContent = JSON.stringify({ address, amount: accountDashboard.amount });
         }
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, accountDashboard },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { accountDashboard },
         };
       } catch (error: any) {
         return {
@@ -145,7 +145,7 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
   });
 
   // Get account asset information
-  server.registerTool(
+  registerAppTool(server,
     'algod_get_account_asset_info',
     {
       description: 'Get account-specific asset information from algod',
@@ -155,7 +155,6 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
       },
       _meta: {
         ui: { resourceUri: assetHoldingResourceUri },
-        'ui/resourceUri': assetHoldingResourceUri,
       },
     },
     async ({ address, assetId }) => {
@@ -201,7 +200,7 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
         }
         return {
           content: [{ type: 'text' as const, text: textContent }],
-          structuredContent: { structuredData: true, assetHolding },
+          structuredContent: { assetHolding },
         };
       } catch (error: any) {
         return {

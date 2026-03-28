@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env, AssetVerificationResponse, AssetDetailsResponse } from '../../../types';
 import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
@@ -230,7 +231,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
     resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com', 'https://algorand-wallet-mainnet.b-cdn.net', 'https://ipfs.io'],
   });
   // Get asset information
-  server.registerTool(
+  registerAppTool(server,
     'algod_get_asset_info',
     {
       description: 'Get asset details from algod',
@@ -239,7 +240,6 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
       },
       _meta: {
         ui: { resourceUri: assetCardResourceUri },
-        'ui/resourceUri': assetCardResourceUri,
       },
     },
     async ({ assetId }) => {
@@ -346,8 +346,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, assetDetails },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { assetDetails },
         };
       } catch (error: any) {
         return {
@@ -477,7 +477,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
   // );
 
   // Get detailed asset information from Pera Wallet
-  server.registerTool(
+  registerAppTool(server,
     'pera_verified_asset_query',
     {
       description: 'Get detailed information about an Algorand asset from Pera Wallet',
@@ -487,7 +487,6 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
       },
       _meta: {
         ui: { resourceUri: assetCardResourceUri },
-        'ui/resourceUri': assetCardResourceUri,
       },
     },
     async ({ assetId }) => {
@@ -514,8 +513,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
 
         const textResponse = ResponseProcessor.processResponse(data);
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
-          structuredContent: { structuredData: true, assetDetails: data },
+          content: textResponse.content,
+          structuredContent: { assetDetails: data },
         };
       } catch (error: any) {
         return {
@@ -537,7 +536,7 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
   });
 
   // Get verified asset(s) by name
-  server.registerTool(
+  registerAppTool(server,
     'pera_verified_assets_search',
     {
       description: 'Search PeraWallet verified Algorand asset(s) by asset name, unit name, or creator address',
@@ -547,7 +546,6 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
       },
       _meta: {
         ui: { resourceUri: assetSearchResourceUri },
-        'ui/resourceUri': assetSearchResourceUri,
       },
     },
     async ({ query, pageToken }) => {
@@ -574,7 +572,6 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
           return {
             content: [{ type: 'text' as const, text: `No verified assets found for: ${query}` }],
             structuredContent: {
-              structuredData: true,
               searchResults: { query, assets: [], totalResults: 0 },
             },
           };
@@ -604,8 +601,8 @@ export function registerAssetApiTools(server: McpServer, env: Env, assets?: Asse
 
         const textResponse = ResponseProcessor.processResponse(filteredAssets, pageToken);
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textResponse.content[0].text) }],
-          structuredContent: { structuredData: true, searchResults },
+          content: textResponse.content,
+          structuredContent: { searchResults },
         };
       } catch (error: any) {
         return {

@@ -6,6 +6,7 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 // import { en } from 'zod/v4/locales';
@@ -133,7 +134,8 @@ export function registerAlgodTools(server: McpServer, env: Env, _props: Props, a
   // );
   
   // Send raw transaction
-  server.registerTool(
+  registerAppTool(
+    server,
     'sdk_send_raw_transaction',
     {
       description: 'Submit signed transactions to the Algorand network',
@@ -142,7 +144,6 @@ export function registerAlgodTools(server: McpServer, env: Env, _props: Props, a
       },
       _meta: {
         ui: { resourceUri: rawTxnSubmitResourceUri },
-        'ui/resourceUri': rawTxnSubmitResourceUri,
       },
     },
     async ({ signedTxns }) => {
@@ -171,8 +172,8 @@ export function registerAlgodTools(server: McpServer, env: Env, _props: Props, a
         const response = await algodClient.sendRawTransaction(txnsBytes).do();
         const rawSubmitResult = { txId: response.txid };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, rawSubmitResult }, null, 2) }],
-          structuredContent: { structuredData: true, rawSubmitResult },
+          content: [{ type: 'text' as const, text: JSON.stringify(rawSubmitResult, null, 2) }],
+          structuredContent: { rawSubmitResult },
         };
       } catch (error: any) {
         return {

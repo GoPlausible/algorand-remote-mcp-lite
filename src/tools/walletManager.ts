@@ -7,6 +7,7 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props /* , VaultResponse */ } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import {
@@ -104,13 +105,13 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   // }
 
   //Reset wallet account
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_reset_account',
     {
       description: 'Reset the wallet account for the configured user. CAUTION: This will delete existing keys and create new ones. Warn user before proceeding.',
       _meta: {
         ui: { resourceUri: walletResetCardResourceUri },
-        'ui/resourceUri': walletResetCardResourceUri,
       },
     },
     async () => {
@@ -189,8 +190,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           }
           const resetResult = { address, user: props.email, provider: props.provider };
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, resetResult }, null, 2) }],
-            structuredContent: { structuredData: true, resetResult },
+            content: [{ type: 'text' as const, text: JSON.stringify(resetResult, null, 2) }],
+            structuredContent: { resetResult },
           };
         }
         throw new Error('No active agent wallet configured');
@@ -206,13 +207,13 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
   
   // // Get wallet role UUID
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_get_role',
     {
       description: 'Get the role UUID for the configured wallet to be used to login into Hashicorp Vault with OIDC. This is a very sensitive piece of information. Always protect it and avoid sharing it!',
       _meta: {
         ui: { resourceUri: walletRoleCardResourceUri },
-        'ui/resourceUri': walletRoleCardResourceUri,
       },
     },
     async () => {
@@ -238,8 +239,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
 
         const roleData = { role: roleId, user: props.email, provider: props.provider };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ structuredData: true, roleData }, null, 2) }],
-          structuredContent: { structuredData: true, roleData },
+          content: [{ type: 'text' as const, text: JSON.stringify(roleData, null, 2) }],
+          structuredContent: { roleData },
         };
       } catch (error: any) {
         return {
@@ -253,7 +254,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
 
   // Get wallet account information (with MCP Apps UI)
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_get_info',
     {
       description: 'Get the account information for the configured wallet. Always use algorand_mcp_skill tool at the start of each session to obtain required skill on how to operate and interact with this MCP service!',
@@ -262,7 +264,6 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
       },
       _meta: {
         ui: { resourceUri: walletCardResourceUri },
-        'ui/resourceUri': walletCardResourceUri,
       },
     },
     async ({ pageToken }) => {
@@ -329,8 +330,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           textContent = JSON.stringify({ address, amount: walletData.accounts[0]?.amount });
         }
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, ...walletData },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { ...walletData },
         };
       } catch (error: any) {
         return {
@@ -344,7 +345,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
 
   // Get wallet assets
-  server.registerTool(
+  registerAppTool(
+    server,
     'wallet_get_assets',
     {
       description: 'Get the assets for the configured wallet',
@@ -353,7 +355,6 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
       },
       _meta: {
         ui: { resourceUri: assetPortfolioResourceUri },
-        'ui/resourceUri': assetPortfolioResourceUri,
       },
     },
     async ({ pageToken }) => {
@@ -431,8 +432,8 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         }
 
         return {
-          content: [{ type: 'text' as const, text: ResponseProcessor.withStructuredFlag(textContent) }],
-          structuredContent: { structuredData: true, assetPortfolio },
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { assetPortfolio },
         };
       } catch (error: any) {
         return {

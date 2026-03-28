@@ -16,7 +16,7 @@ interface IndexerSearchData {
   type: SearchType;
   results: any[];
   totalResults: number;
-  nextToken: string | null;
+  'next-token': string | null;
   query: Record<string, any>;
 }
 
@@ -341,8 +341,8 @@ function renderSearchResults(data: IndexerSearchData): string {
     ? renderTableForType(data.type, data.results)
     : `<div class="is-empty">No ${data.type} found matching the search criteria.</div>`;
 
-  const nextTokenHtml = data.nextToken
-    ? `<div class="is-footer">More results available (next-token: ${data.nextToken.slice(0, 12)}...)</div>`
+  const nextTokenHtml = data['next-token']
+    ? `<div class="is-footer">More results available (next-token: ${data['next-token'].slice(0, 12)}...)</div>`
     : "";
 
   return `
