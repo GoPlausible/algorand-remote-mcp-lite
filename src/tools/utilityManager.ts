@@ -9,6 +9,7 @@ import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { skill } from '../utils/Skill.js';
+import { skilldemo } from '../utils/SkillDemo.js';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 
@@ -363,11 +364,29 @@ export function registerUtilityTools(server: McpServer, env: Env, props: Props, 
   server.registerTool(
     'algorand_mcp_skill',
     {
-      description: 'Access comprehensive Algorand MCP skill including step-by-step workflows, examples, and best practices.',
+      description: 'Access comprehensive Algorand Remote MCP Lite skill including step-by-step workflows, examples, and best practices.',
     },
     async () => {
       try {
         return ResponseProcessor.processResponse(skill);
+      } catch (error: any) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Error getting agents skill: ${error.message || 'Unknown error'}`
+          }]
+        };
+      }
+    }
+  );
+  server.registerTool(
+    'algorand_demo_skill',
+    {
+      description: 'Instruction on how to use Algorand Remote MCP Lite edition (wallet edition) and give user a comprehensive, gamified demo of what Algorand and that MCP can do together',
+    },
+    async () => {
+      try {
+        return ResponseProcessor.processResponse(skilldemo);
       } catch (error: any) {
         return {
           content: [{

@@ -45,9 +45,13 @@ function formatAlgo(microAlgos: number): string {
   });
 }
 
-function truncateAddress(addr: string): string {
-  if (addr.length <= 16) return addr;
-  return `${addr.slice(0, 8)}...${addr.slice(-8)}`;
+function truncateAddress(addr: unknown): string {
+  // Defensive: structuredContent may carry non-string address values (e.g. an
+  // algosdk Address object serialized to {publicKey:{...}}). Coerce so a bad
+  // value degrades gracefully instead of throwing and blanking the whole card.
+  const s = typeof addr === "string" ? addr : addr == null ? "" : String(addr);
+  if (s.length <= 16) return s;
+  return `${s.slice(0, 8)}...${s.slice(-8)}`;
 }
 
 function formatAssetAmount(amount: number, assetId: number): string {

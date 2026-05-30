@@ -258,7 +258,7 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
     server,
     'wallet_get_info',
     {
-      description: 'Get the account information for the configured wallet. Always use algorand_mcp_skill tool at the start of each session to obtain required skill on how to operate and interact with this MCP service!',
+      description: 'Get the account information for the configured wallet. Always use algorand_mcp_skill tool (or algorand_demo_skill tool for a guided demo) at the start of each session to obtain required skill on how to operate and interact with this MCP service!',
       inputSchema: {
         pageToken: z.string().optional().describe('Pagination token for paginated results'),
       },

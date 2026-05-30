@@ -53,7 +53,7 @@ All API tools accept optional `itemsPerPage` (default 10) and `pageToken` parame
 1. **Always start with `wallet_get_info`** — verify wallet before any blockchain operation.
 2. **Check balances before transactions** — include MBR and fees in calculations.
 3. **Verify asset opt-in** before any asset transfer.
-4. **Use `depositAccount`** from NFD responses for transactions, never other address fields.
+4. **Use `depositAccount`** from NFD responses for transactions; if it is not available, fall back to `address`, then `owner` — in that order.
 5. **Handle ALGO funding first** when both ALGO and asset top-ups are needed.
 6. **Prefer Haystack Router for swaps** — it finds the best price across multiple DEXes automatically.
 7. **Verify recipients** — use `sdk_validate_address` to confirm addresses before sending.
@@ -192,7 +192,7 @@ Verification tiers: `verified` (highest), `trusted`, `suspicious` (warn user!), 
 | `api_nfd_get_nfd` | Look up NFD by name (e.g., "example.algo") |
 | `api_nfd_get_nfds_for_address` | Get NFDs owned by an address |
 
-**CRITICAL**: When transacting with NFD addresses, always use the `depositAccount` field from the NFD response, never any other address field.
+**CRITICAL**: When transacting with NFD addresses, always use the `depositAccount` field from the NFD response. If `depositAccount` is not available, fall back to the `address` field, then the `owner` field — in that order.
 
 **NFD Lookup examples:**
 ```
@@ -332,6 +332,7 @@ When displaying QR codes, paste the UTF-8 QR block inside a code block and show 
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content for MCP usage guidance |
+| `algorand_demo_skill` | Returns the gamified, guided demo walkthrough content |
 
 ---
 
@@ -470,8 +471,8 @@ General asset opt-in:
 ### NFD Resolution for Transactions
 ```
 1. api_nfd_get_nfd → look up the .algo name
-2. Extract depositAccount from response
-3. Use depositAccount as transaction recipient
+2. Extract depositAccount from response (if missing, use address, then owner — in that order)
+3. Use that resolved address as transaction recipient
 ```
 
 ### Top-Up QR Code (Insufficient Funds)
@@ -633,6 +634,7 @@ Sell orders lock outcome tokens as collateral.
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content |
+| `algorand_demo_skill` | Returns the demo skill content |
 
 Categories: `arcs`, `sdks`, `algokit`, `algokit-utils`, `tealscript`, `puya`, `liquid-auth`, `python`, `developers`, `clis`, `nodes`, `details`
 

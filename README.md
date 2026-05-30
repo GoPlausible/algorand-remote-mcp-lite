@@ -56,6 +56,7 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 - `sdk_decode_address`: Decode an Algorand address to a public key
 - `sdk_app_address_by_id`: Get the escrow address for a given application ID
 - `algorand_mcp_skill`: Access comprehensive skill/guide for using Algorand Remote MCP Lite, including workflows, examples, and best practices
+- `algorand_demo_skill`: Access a demo skill showcasing various tools and features of the Algorand Remote MCP Lite (for demonstration purposes)
 
 ### Transactions (4)
 - `sdk_txn_payment_transaction`: Create an ALGO payment transaction

@@ -27,7 +27,7 @@ Algorand Remote MCP Lite uses the MCP Apps SDK (`@modelcontextprotocol/ext-apps`
 - **55 tools** are registered as App tools with `_meta.ui.resourceUri` linking each tool to an HTML widget resource.
 - Each tool returns both `content` (text fallback) and `structuredContent` (typed data for the widget).
 - The host detects `_meta.ui.resourceUri` on the tool and renders the widget inline — **the widget IS the complete response**.
-- 4 plain utility tools (`sdk_encode_address`, `sdk_decode_address`, `algorand_mcp_skill`, `haystack_needs_optin`) have no UI and return text only.
+- 4 plain utility tools (`sdk_encode_address`, `sdk_decode_address`, `algorand_mcp_skill`, `algorand_demo_skill`, `haystack_needs_optin`) have no UI and return text only.
 
 ### Agent behavior rules
 
@@ -341,6 +341,7 @@ When displaying QR codes, paste the UTF-8 QR block inside a code block and show 
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content for MCP usage guidance |
+| `algorand_demo_skill` | Returns the gamified, guided demo walkthrough content |
 
 ---
 
@@ -642,6 +643,7 @@ Sell orders lock outcome tokens as collateral.
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content |
+| `algorand_demo_skill` | Returns the demo skill content |
 
 Categories: `arcs`, `sdks`, `algokit`, `algokit-utils`, `tealscript`, `puya`, `liquid-auth`, `python`, `developers`, `clis`, `nodes`, `details`
 

@@ -96,7 +96,10 @@ export function registerAccountApiTools(server: McpServer, env: Env, assets?: As
           amount: Number(response.amount),
           minBalance: Number(response.minBalance ?? 0),
           status: response.status || 'Offline',
-          authAddr: response.authAddr ?? undefined,
+          // algosdk v3 returns authAddr as an Address object (no toJSON) — must
+          // stringify, or it serializes to {publicKey:{...}} and crashes the widget's
+          // truncateAddress (a.slice is not a function) for rekeyed accounts.
+          authAddr: response.authAddr ? response.authAddr.toString() : undefined,
           totalAssets: allAssets.length,
           totalApps: (response.appsLocalState || []).length,
           totalCreatedAssets: (response.createdAssets || []).length,

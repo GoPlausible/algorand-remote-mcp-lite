@@ -36,7 +36,7 @@ API responses are paginated. All API tools accept optional \`itemsPerPage\` (def
 1. **Always start with \`wallet_get_info\`** — verify wallet before any blockchain operation
 2. **Check balances before transactions** — include MBR and fees in calculations
 3. **Verify asset opt-in** before any asset transfer
-4. **Use \`depositAccount\`** from NFD responses for transactions, never other address fields
+4. **Use \`depositAccount\`** from NFD responses for transactions; if it is not available, fall back to \`address\`, then \`owner\` — in that order
 5. **Handle ALGO funding first** when both ALGO and asset top-ups are needed
 
 ### Using Knowledge Base
@@ -143,11 +143,11 @@ pera_verified_asset_search
 \`\`\`
 
 ### NFD Lookup
-**CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response, never any other address field.
+**CRITICAL**: When transacting with NFD addresses, always use the \`depositAccount\` field from the NFD response. If \`depositAccount\` is not available, fall back to the \`address\` field, then the \`owner\` field — in that order.
 \`\`\`
 // Look up an NFD name
 api_nfd_get_nfd { nameOrID: "example.algo", view: "full", network: "mainnet" }
-→ CRITICAL: Use depositAccount field for transactions, NOT other address fields!
+→ CRITICAL: Use depositAccount for transactions; if missing, use address, then owner — in that order!
 
 // Get NFDs owned by an address
 api_nfd_get_nfds_for_addresses {
@@ -161,8 +161,8 @@ api_nfd_get_nfds_for_addresses {
 ### NFD Resolution
 \`\`\`
 1. api_nfd_get_nfd → look up the .algo name
-2. Extract depositAccount from response
-3. Use depositAccount as transaction recipient
+2. Extract depositAccount from response (if missing, use address, then owner — in that order)
+3. Use that resolved address as transaction recipient
 \`\`\`
 
 ### Swaps by Haystack Router (DEX Aggregator)
