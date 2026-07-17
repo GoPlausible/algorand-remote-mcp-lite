@@ -27,7 +27,7 @@ Algorand Remote MCP Lite uses the MCP Apps SDK (`@modelcontextprotocol/ext-apps`
 - **55 tools** are registered as App tools with `_meta.ui.resourceUri` linking each tool to an HTML widget resource.
 - Each tool returns both `content` (text fallback) and `structuredContent` (typed data for the widget).
 - The host detects `_meta.ui.resourceUri` on the tool and renders the widget inline — **the widget IS the complete response**.
-- 4 plain utility tools (`sdk_encode_address`, `sdk_decode_address`, `algorand_mcp_skill`, `algorand_demo_skill`, `haystack_needs_optin`) have no UI and return text only.
+- 4 plain utility tools (`sdk_encode_address`, `sdk_decode_address`, `algorand_mcp_skill`, `haystack_needs_optin`) have no UI and return text only.
 
 ### Agent behavior rules
 
@@ -47,7 +47,6 @@ Algorand Remote MCP Lite uses the MCP Apps SDK (`@modelcontextprotocol/ext-apps`
 6. **Signing**: Server-side signing via HashiCorp Vault — never request private keys or mnemonics unless the user explicitly asks.
 7. **Wallet Role UUID**: Retrieved only via `wallet_get_role` — this is sensitive information. Always warn users to protect it and never share it.
 8. **Asset Verification**: Check `pera_verified_asset_query` before interacting with unknown assets. Warn about suspicious/unverified tiers.
-9. **Spending Limits**: If a transaction is rejected due to wallet limits, inform the user rather than bypassing.
 
 ---
 
@@ -67,6 +66,7 @@ All API tools accept optional `itemsPerPage` (default 10) and `pageToken` parame
 6. **Prefer Haystack Router for swaps** — it finds the best price across multiple DEXes automatically.
 7. **Verify recipients** — use `sdk_validate_address` to confirm addresses before sending.
 8. **Simulate critical transactions** before submitting to catch errors without spending funds.
+9. **Always present transaction IDs as explorer links** — after any operation that returns a txId, show it as a clickable link. Mainnet: `https://allo.info/tx/{txId}`. Testnet: `https://lora.algokit.io/testnet/transaction/{txId}`. For multiple txIds (atomic groups, swaps), show each as a separate link.
 
 ---
 
@@ -341,7 +341,6 @@ When displaying QR codes, paste the UTF-8 QR block inside a code block and show 
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content for MCP usage guidance |
-| `algorand_demo_skill` | Returns the gamified, guided demo walkthrough content |
 
 ---
 
@@ -383,7 +382,6 @@ Before ANY transaction, validate these requirements:
 | `Asset hasn't been opted in` | Missing opt-in | Opt in to asset first |
 | `Overspend` | Fee + amount > balance | **STOP** — check balance, inform user (see below) |
 | `Insufficient balance` | Not enough ALGO or ASA | **STOP** — check balance, inform user (see below) |
-| `Spending limit exceeded` | Transaction exceeds wallet allowance | Inform user, adjust spending limits |
 | `No active agent wallet configured` | Missing wallet | Inform user, retry wallet check |
 
 > **CRITICAL — Overspend / Insufficient Balance**: If a transaction or swap fails due to overspending, insufficient balance, or negative balance errors, **DO NOT continue or retry**. Immediately call `wallet_get_info` to check the current balance, then inform the user of the shortfall (required amount vs. available balance including MBR and fees). Do not attempt alternative amounts or re-submit — wait for the user to fund the account or confirm next steps.
@@ -418,6 +416,7 @@ Always check an asset's `decimals` field with `algod_get_asset_info` before comp
 3. wallet_sign_transaction → sign with wallet
 4. sdk_submit_transaction → submit to network
 5. indexer_lookup_transaction_by_id → verify result (optional)
+6. Present txId as explorer link (mainnet: https://allo.info/tx/{txId}, testnet: https://lora.algokit.io/testnet/transaction/{txId})
 ```
 
 ### Asset Opt-In
@@ -531,6 +530,7 @@ The `type` parameter determines whether `amount` is the exact input or output. *
 | 3 | `sdk_txn_asset_optin` + sign + submit | Opt-in if needed |
 | 4 | `haystack_get_swap_quote` | Preview best-price quote — show output, USD values, route, price impact |
 | 5 | `haystack_execute_swap` | Quote + sign + submit + confirm in one call — proceed immediately, do NOT wait for user confirmation |
+| 6 | — | **Present each txId from response as explorer link** (mainnet: `https://allo.info/tx/{txId}`, testnet: `https://lora.algokit.io/testnet/transaction/{txId}`) |
 
 **Swap examples:**
 ```
@@ -615,6 +615,7 @@ Sell orders lock outcome tokens as collateral.
 2. `alpha_get_orderbook` — check available liquidity
 3. `alpha_create_market_order` (auto-matches) or `alpha_create_limit_order` (rests on book)
 4. Save the returned `escrowAppId` — needed to cancel later
+5. Present returned txIds as clickable explorer links (mainnet: `https://allo.info/tx/{txId}`, testnet: `https://lora.algokit.io/testnet/transaction/{txId}`)
 
 **Checking portfolio:**
 1. `alpha_get_positions` — see all YES/NO token balances
@@ -643,7 +644,6 @@ Sell orders lock outcome tokens as collateral.
 | Tool | Purpose |
 |------|---------|
 | `algorand_mcp_skill` | Returns this skill content |
-| `algorand_demo_skill` | Returns the demo skill content |
 
 Categories: `arcs`, `sdks`, `algokit`, `algokit-utils`, `tealscript`, `puya`, `liquid-auth`, `python`, `developers`, `clis`, `nodes`, `details`
 
