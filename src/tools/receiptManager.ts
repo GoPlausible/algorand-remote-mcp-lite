@@ -90,6 +90,18 @@ function shorten(value: string): string {
 	return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-6)}` : value;
 }
 
+/**
+ * Deterministic receipt id: SHA-256 of the transaction id, truncated to 32 lowercase
+ * hex chars (safe for URLs and KV key names). Same txId always maps to the same
+ * receipt, so re-requesting a receipt never creates a redundant KV entry.
+ */
+async function receiptIdFromTxId(txId: string): Promise<string> {
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txId));
+	return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0"))
+		.join("")
+		.slice(0, 32);
+}
+
 function formatAmount(value: number): string {
 	return value.toFixed(6).replace(/\.?0+$/, "");
 }
@@ -471,7 +483,39 @@ export function registerReceiptTools(
 		},
 		async ({ sender, receiver, amount, assetId, fee, note, txId, category }) => {
 			try {
-				const uuid = crypto.randomUUID().replaceAll("-", "");
+				const uuid = await receiptIdFromTxId(txId);
+
+				// Same txId → same receipt: return the existing one instead of regenerating
+				const existing = await env.ARC26_KV?.get(`rid--${uuid}`);
+				if (existing) {
+					console.log("Receipt already exists for txId, returning existing link:", uuid);
+					const receiptLink = `https://goplausible.xyz/api/receipt/${uuid}`;
+					const textResponse = ResponseProcessor.processResponse({
+						label: "Algorand Agency Universal Receipt link (valid for 90 days)",
+						category,
+						qrcode_link: receiptLink,
+					});
+					const existingImage = await env.ARC26_KV?.get(`image--${uuid}`);
+					return {
+						content: textResponse.content,
+						structuredContent: {
+							receipt: {
+								sender,
+								receiver,
+								amount,
+								assetId,
+								fee,
+								txId,
+								note,
+								category,
+								receiptLink,
+								qrImageData: existingImage ?? undefined,
+								createdAt: new Date().toISOString(),
+							},
+						},
+					};
+				}
+
 				const toolArgs: any = {
 					sender,
 					receiver,
