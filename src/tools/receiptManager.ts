@@ -270,7 +270,7 @@ export function buildHTMLPage({
     .header { background: #1E140D; padding: 20px 28px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .header img { height: 48px; display: block; }
     .header .pill { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 1.6px; color: #E89B6B; border: 1px solid rgba(232,155,107,0.45); border-radius: 99px; padding: 5px 12px; white-space: nowrap; }
-    .badges { display: flex; gap: 6px; padding: 16px 28px 0 28px; flex-wrap: wrap; }
+    .badges { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 22px; }
     .badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; padding: 5px 11px; border-radius: 99px; color: #6B5E52; border: 1px solid #E5DCD3; background: #F8F5F2; }
     .badge.active { color: #1E140D; background: #E89B6B; border-color: #E89B6B; }
     .badge.secondary { color: #1E140D; background: #F6DEC9; border-color: #EBC7A8; }
@@ -320,10 +320,7 @@ export function buildHTMLPage({
   <main class="card">
     <div class="header">
       <img src="${LOGOTYPE_URL}" alt="GoPlausible" />
-      <span class="pill">UNIVERSAL RECEIPT</span>
-    </div>
-    <div class="badges">
-      ${badges}
+      <span class="pill">Valid 90 days</span>
     </div>
     <div class="hero">
       <div class="settled">${CHECK_CIRCLE_SVG} Payment settled</div>
@@ -333,6 +330,9 @@ export function buildHTMLPage({
         <span class="code">${currency.code}</span>
       </div>
       <div class="chip">${ALGO_CHIP_MARK_SVG}<span class="net">Algorand MainNet</span><span class="sep">·</span><span class="ts">${timestamp}</span></div>
+      <div class="badges">
+        ${badges}
+      </div>
     </div>
     <div class="details">
       ${rows.join("\n      ")}
@@ -487,7 +487,7 @@ export function registerReceiptTools(
 
 				const { url, qrCode, qrDataUri } = await generateAlgorandReceipt(toolArgs);
 				console.log("Generated Receipt URL:", url);
-				await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 * 7 }); // Cache for 7 days
+				await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 * 90 }); // Cache for 90 days
 
 				const htmlPage = buildHTMLPage({
 					provider: props.provider,
@@ -505,12 +505,12 @@ export function registerReceiptTools(
 					note,
 					category,
 				});
-				await env.ARC26_KV?.put(`rid--${uuid}`, htmlPage, { expirationTtl: 86400 * 7 }); // Cache for 7 days
+				await env.ARC26_KV?.put(`rid--${uuid}`, htmlPage, { expirationTtl: 86400 * 90 }); // Cache for 90 days
 
 				const receiptLink = `https://goplausible.xyz/api/receipt/${uuid}`;
 
 				const textResponse = ResponseProcessor.processResponse({
-					label: "Algorand Agency Universal Receipt link (valid for 7 days)",
+					label: "Algorand Agency Universal Receipt link (valid for 90 days)",
 					category,
 					qrcode_link: receiptLink,
 				});

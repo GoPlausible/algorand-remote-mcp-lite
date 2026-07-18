@@ -374,7 +374,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
 
         const uuid = crypto.randomUUID().replaceAll('-', '');
 
-        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 });
+        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 });// cache one day
 
         const htmlPage = buildHTMLPage({
           provider: props.provider,
@@ -387,7 +387,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
           label2: `${uriType}`,
           amount
         });
-        await env.ARC26_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 });
+        await env.ARC26_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 });// cache one day
 
         const qrCodeLink = `https://goplausible.xyz/api/arc26/${uuid}`;
 
