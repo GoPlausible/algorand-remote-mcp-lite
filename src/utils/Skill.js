@@ -12,7 +12,7 @@ Read and learn these skills and instructions to define your capabilities, workfl
 
 ### **CRITICAL** Algorand MCP Response Handling Rules
 
-This server uses the MCP Apps SDK (\`@modelcontextprotocol/ext-apps\`). 55 tools are registered as App tools via \`registerAppTool()\` with \`_meta.ui.resourceUri\` linking each to an HTML widget. 4 plain utility tools have no UI.
+This server uses the MCP Apps SDK (\`@modelcontextprotocol/ext-apps\`). 60 tools are registered as App tools via \`registerAppTool()\` with \`_meta.ui.resourceUri\` linking each to an HTML widget. 4 plain utility tools have no UI.
 
 1. **UI-capable hosts**: The widget renders inline as the complete response. Do NOT repeat, reformat, or summarize the \`content\` text — the widget IS the response. Simply confirm the action succeeded.
 2. **Text-only clients**: The \`content\` text fallback is shown automatically — no special handling needed.
@@ -301,12 +301,35 @@ Sell orders lock outcome tokens as collateral.
 - **Save escrowAppId**: It's the only way to cancel or reference your order later.
 - **Trading requires wallet**: Read-only tools work for everyone, but trading uses your MCP wallet.
 
+## x402 Paid Resources (Bazaar + Payments)
+
+Pay x402-protected HTTP APIs with USDC from the wallet, and discover paid resources via the Bazaar directory (hosted by the facilitator, \`https://facilitator.goplausible.xyz\`). Payments are gasless — the facilitator sponsors network fees via an atomic fee-payer transaction; the wallet only signs the USDC transfer. **Wallet Edition is mainnet-only**: payments are built and settled exclusively on Algorand MainNet, and Bazaar results exclude testnet/devnet-only resources.
+
+| Tool | Purpose |
+|------|---------|
+| \`x402_discover_payment_requirements\` | Probe a paid endpoint → its \`accepts[]\` (cost, networks, assets). Read-only, no payment |
+| \`make_http_request_with_x402\` | Pay + fetch in one call: builds the atomic group, signs the payment leg, retries with \`PAYMENT-SIGNATURE\` |
+| \`bazaar_list\` | Browse the Bazaar catalog (\`network\`, \`method\`, \`merchantId\`, \`limit\`/\`offset\`; \`full: true\` for verbatim records) |
+| \`bazaar_search\` | Keyword search + client-side filters (\`maxUsdPrice\`, \`scheme\`, \`asset\`, \`payTo\`; mainnet-only) |
+| \`bazaar_get_resource_details\` | Verbatim record for one exact \`resource\` URL (full \`accepts[]\` + \`discoveryInfo\`) |
+
+**Use properly**:
+- Preferred flow: discover (free) → confirm cost with user → \`make_http_request_with_x402\` with the \`accepts[]\` passed verbatim as \`paymentRequirements\` and a \`maxAmountPerRequest\` budget cap (atomic units). Without \`paymentRequirements\` the tool probes internally — fine for trusted endpoints.
+- **Mainnet = real money**: confirm URL, USD cost, and \`payTo\` with the user before paying. Always set \`maxAmountPerRequest\`.
+- Amounts are atomic units: USDC has 6 decimals → \`"1000"\` = $0.001, \`"1000000"\` = $1.00. USD = \`amount / 10^extra.decimals\`.
+- The wallet must be opted into the payment ASA (USDC mainnet \`31566704\`) and hold enough balance — use \`wallet_usdc_optin\` for one-step USDC opt-in.
+
+**CAIP-2 networks**: \`accepts[].network\` is \`algorand:<genesis hash>\` — mainnet \`algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=\`. A CAIP-spec truncated form also exists (first 32 URL-safe chars) — compare by prefix. Tools also accept friendly names (\`"mainnet"\`, \`"algorand-mainnet"\`).
+
+**Response format**: a successful paid call returns \`result\` (the resource body), \`paid\` (\`network\`, \`asset\`, \`amount\`, \`payTo\`), and \`paymentResponse\` — the decoded settle result carrying the on-chain txn id (\`paymentResponse.transaction\`). **Always report the txn id to the user as an explorer link**: \`https://allo.info/tx/<txn id>\`. Also offer the shareable receipt \`https://facilitator.goplausible.xyz/api/receipt/<txn id>\`.
+
 ## External Links
 
 - GoPlausible: https://goplausible.com
 - Algorand: https://algorand.co
 - Algorand Developer Docs: https://dev.algorand.co/
 - Algorand x402: https://x402.goplausible.xyz
+- Algorand x402 Facilitator: https://facilitator.goplausible.xyz
 - Algorand x402 Test Endpoints: https://example.x402.goplausible.xyz/
 - Testnet Faucet: https://lora.algokit.io/testnet/fund
 - Testnet USDC Faucet: https://faucet.circle.com/

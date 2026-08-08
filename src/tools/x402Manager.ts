@@ -21,6 +21,11 @@ import { getPublicKey, signWithTransit } from "../utils/vaultManager";
 
 const MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=";
 
+// GoPlausible facilitator's Algorand fee-payer address, as advertised by its
+// /supported endpoint (signers["algorand:*"]). Used when a payment requirement
+// omits `extra.feePayer`.
+const FACILITATOR_FEE_PAYER = "ZMFK2OI7ZBD2U27ISERZC4S6LKM6WMFJPZQ4MYNJDZ2VNBNMBA67RA22AA";
+
 function isMainnetCaip2(caip2: string): boolean {
 	return caip2 === MAINNET_CAIP2;
 }
@@ -363,10 +368,10 @@ async function buildPaymentHeader(
 	props: Props,
 	requirement: PaymentRequirement,
 ): Promise<string> {
-	const feePayer = requirement.extra?.feePayer;
-	if (!feePayer || typeof feePayer !== "string") {
-		throw new Error("Payment requirement is missing `extra.feePayer` (facilitator address).");
-	}
+	const feePayer =
+		typeof requirement.extra?.feePayer === "string" && requirement.extra.feePayer
+			? requirement.extra.feePayer
+			: FACILITATOR_FEE_PAYER;
 
 	const amountStr = getRequirementAmount(requirement);
 	const amount = Number(amountStr);
