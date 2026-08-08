@@ -515,6 +515,12 @@ export interface Env {
   ALPHA_API_BASE_URL?: string;
 
   /**
+   * Bazaar (x402 facilitator discovery directory) base URL
+   * (default: https://facilitator.goplausible.xyz)
+   */
+  BAZAAR_BASE_URL?: string;
+
+  /**
    * Alpha Arcade API key for partner API access
    */
   ALPHA_API_KEY?: string;

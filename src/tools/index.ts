@@ -13,4 +13,5 @@ export * from './apiManager';
 export * from './walletManager';
 export * from './ap2Manager';
 export * from './alphaArcadeManager';
+export * from './x402Manager';
 // export * from './tinymanManager';

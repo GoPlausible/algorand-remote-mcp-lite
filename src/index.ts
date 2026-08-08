@@ -24,6 +24,7 @@ import {
 	registerWalletTools,
 	registerAp2Tools,
 	registerAlphaArcadeTools,
+	registerX402Tools,
 	// registerTinymanTools
 } from './tools';
 import { registerSkillResource } from './resources';
@@ -102,6 +103,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		await this.registerTransactionTools();
 		this.registerBasicUtilityTools();
 		this.registerAlphaArcadeTools();
+		await this.registerX402Tools();
 		// await this.registerTinymanTools()
 		// Additional tool categories will be added here
 	}
@@ -218,6 +220,12 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	 */
 	private registerAlphaArcadeTools() {
 		registerAlphaArcadeTools(this.server, this.env, this.props!, this.env.ASSETS);
+	}
+	/**
+	 * Register x402 payment protocol tools (discovery, paid requests, Bazaar)
+	 */
+	private async registerX402Tools() {
+		await registerX402Tools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	// private async registerTinymanTools() {
 	// 	// Register wallet management tools

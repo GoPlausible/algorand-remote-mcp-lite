@@ -1,51 +1,28 @@
 /**
- * x402 Manager for Algorand Remote MCP
+ * x402 Manager for Algorand Remote MCP Lite (Wallet Edition)
  * Provides x402 payment-protocol tools: payment-requirement discovery, paid
  * HTTP requests (payment leg signed with the user's vault-held key) and
  * Bazaar (facilitator discovery directory) browsing and search.
+ *
+ * Wallet Edition is MainNet-only: payments are built and settled exclusively on
+ * Algorand MainNet, and Bazaar results are filtered to mainnet-payable entries.
  */
 
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as msgpack from "algo-msgpack-with-bigint";
 import * as algosdk from "algosdk";
 import { z } from "zod";
 import type { Env, Props } from "../types";
+import { type AssetsBinding, registerWidget } from "../ui/widgetManager";
 import { getPublicKey, signWithTransit } from "../utils/vaultManager";
 
-// ── CAIP-2 ↔ MCP network mapping ─────────────────────────────────────────────
+// ── CAIP-2 network handling (MainNet-only) ───────────────────────────────────
 
-type NetworkId = "mainnet" | "testnet" | "localnet";
+const MAINNET_CAIP2 = "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=";
 
-const CAIP2_GENESIS_TO_NETWORK: Record<string, NetworkId> = {
-	"wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=": "mainnet",
-	"SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=": "testnet",
-};
-
-const NETWORK_TO_CAIP2: Record<NetworkId, string> = {
-	mainnet: "algorand:wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=",
-	testnet: "algorand:SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/cOUJOiI=",
-	localnet: "algorand:localnet",
-};
-
-function caip2ToNetwork(caip2: string): NetworkId | null {
-	if (!caip2.startsWith("algorand:")) return null;
-	const hash = caip2.slice("algorand:".length);
-	return CAIP2_GENESIS_TO_NETWORK[hash] ?? null;
-}
-
-/**
- * The network this deployment's algod endpoint serves (from ALGORAND_NETWORK).
- * Payments can only be built and settled on this network.
- */
-function configuredNetwork(env: Env): NetworkId {
-	const network = (env.ALGORAND_NETWORK || "mainnet").toLowerCase();
-	return network === "testnet" || network === "localnet" ? network : "mainnet";
-}
-
-// ── Bazaar (discovery) config ────────────────────────────────────────────────
-
-function bazaarBaseUrl(env: Env): string {
-	return env.BAZAAR_BASE_URL || "https://facilitator.goplausible.xyz";
+function isMainnetCaip2(caip2: string): boolean {
+	return caip2 === MAINNET_CAIP2;
 }
 
 /**
@@ -63,13 +40,17 @@ function friendlyToCaip2Network(input: string): string {
 	) {
 		return input;
 	}
-	// Algorand friendly aliases.
-	if (input === "algorand-mainnet" || input === "mainnet") return NETWORK_TO_CAIP2.mainnet;
-	if (input === "algorand-testnet" || input === "testnet") return NETWORK_TO_CAIP2.testnet;
-	if (input === "algorand-localnet" || input === "localnet") return NETWORK_TO_CAIP2.localnet;
+	// Algorand friendly aliases — Wallet Edition is mainnet-only.
+	if (input === "algorand-mainnet" || input === "mainnet") return MAINNET_CAIP2;
 	// Pass through for non-Algorand short names — the Bazaar may or may not
 	// recognize them; if not, it returns an empty items[] which is fine.
 	return input;
+}
+
+// ── Bazaar (discovery) config ────────────────────────────────────────────────
+
+function bazaarBaseUrl(env: Env): string {
+	return env.BAZAAR_BASE_URL || "https://facilitator.goplausible.xyz";
 }
 
 // ── x402 protocol types ──────────────────────────────────────────────────────
@@ -341,31 +322,19 @@ async function discover(opts: {
 	};
 }
 
+/**
+ * Pick a payment requirement satisfiable on Algorand MainNet (the only network
+ * the Wallet Edition supports), preferring the cheapest affordable entry.
+ */
 function selectRequirement(
 	accepts: PaymentRequirement[],
-	network: NetworkId,
-	preferredNetwork: NetworkId | undefined,
 	maxAmountPerRequest: number | undefined,
-): { requirement: PaymentRequirement; mcpNetwork: NetworkId } {
-	// Map each accepts entry to its MCP network (or null if non-Algorand).
-	const ranked = accepts
-		.map((req) => ({ req, mcpNetwork: caip2ToNetwork(req.network) }))
-		.filter(
-			(e): e is { req: PaymentRequirement; mcpNetwork: NetworkId } => e.mcpNetwork !== null,
-		);
+): PaymentRequirement {
+	const usable = accepts.filter((req) => isMainnetCaip2(req.network));
 
-	if (ranked.length === 0) {
-		throw new Error(
-			`No payment requirement is satisfiable on Algorand. Endpoint accepts networks: [${accepts.map((r) => r.network).join(", ")}]`,
-		);
-	}
-
-	// This deployment has a single algod endpoint (ALGORAND_ALGOD), so only
-	// requirements on the configured network can be built and settled.
-	const usable = ranked.filter((e) => e.mcpNetwork === network);
 	if (usable.length === 0) {
 		throw new Error(
-			`Endpoint is payable on [${ranked.map((e) => e.mcpNetwork).join(", ")}] but this MCP is configured for ${network} (ALGORAND_NETWORK).`,
+			`No payment requirement is satisfiable on Algorand MainNet (Wallet Edition is mainnet-only). Endpoint accepts networks: [${accepts.map((r) => r.network).join(", ")}]`,
 		);
 	}
 
@@ -373,21 +342,15 @@ function selectRequirement(
 	const inBudget = (req: PaymentRequirement) =>
 		maxAmountPerRequest === undefined || amountOf(req) <= maxAmountPerRequest;
 
-	const affordable = usable.filter((e) => inBudget(e.req));
+	const affordable = usable.filter(inBudget);
 	if (affordable.length === 0) {
 		throw new Error(
-			`All Algorand payment requirements exceed maxAmountPerRequest=${maxAmountPerRequest}. Cheapest: ${Math.min(...usable.map((e) => amountOf(e.req)))}.`,
+			`All Algorand MainNet payment requirements exceed maxAmountPerRequest=${maxAmountPerRequest}. Cheapest: ${Math.min(...usable.map(amountOf))}.`,
 		);
 	}
 
-	if (preferredNetwork) {
-		const preferred = affordable.find((e) => e.mcpNetwork === preferredNetwork);
-		if (preferred) return { requirement: preferred.req, mcpNetwork: preferred.mcpNetwork };
-	}
-
-	// No preference (or preference not matched): pick the cheapest affordable.
-	const chosen = affordable.reduce((a, b) => (amountOf(a.req) <= amountOf(b.req) ? a : b));
-	return { requirement: chosen.req, mcpNetwork: chosen.mcpNetwork };
+	// Cheapest affordable mainnet entry.
+	return affordable.reduce((a, b) => (amountOf(a) <= amountOf(b) ? a : b));
 }
 
 /**
@@ -516,7 +479,7 @@ function summarizeBazaarItem(item: any): Record<string, unknown> {
 		.filter((a) => typeof a?.network === "string" && a.network.startsWith("algorand:"))
 		.map((a) => ({
 			network: a.network,
-			mcpNetwork: caip2ToNetwork(a.network) ?? null,
+			mainnet: isMainnetCaip2(a.network),
 			scheme: a.scheme,
 			amount: a.amount ?? a.maxAmountRequired,
 			asset: a.asset,
@@ -529,7 +492,7 @@ function summarizeBazaarItem(item: any): Record<string, unknown> {
 		method: item?.method,
 		description: item?.description,
 		merchantId: item?.merchantId,
-		algorandPayable: algorandAccepts.length > 0,
+		algorandPayable: algorandAccepts.some((a) => a.mainnet),
 		algorandAccepts,
 		totalAcceptedNetworks: accepts.length,
 		otherNetworks: accepts
@@ -562,8 +525,46 @@ function cheapestUsdPrice(accepts: any): number | null {
 
 function isTestnetNetwork(caip2: unknown): boolean {
 	if (typeof caip2 !== "string") return false;
-	if (caip2 === NETWORK_TO_CAIP2.testnet) return true;
-	return /sepolia|devnet|testnet/i.test(caip2);
+	return /sepolia|devnet|testnet|localnet|SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9/i.test(caip2);
+}
+
+// ── structuredContent helpers (for MCP Apps widgets) ─────────────────────────
+
+/** JSON-safe compact view of one accepts[] entry for the requirements widget. */
+function summarizeRequirement(req: PaymentRequirement): Record<string, unknown> {
+	return {
+		scheme: req.scheme,
+		network: req.network,
+		mainnet: isMainnetCaip2(req.network),
+		amount: getRequirementAmount(req),
+		asset: req.asset,
+		assetName: req.extra?.name,
+		decimals: typeof req.extra?.decimals === "number" ? req.extra.decimals : undefined,
+		usdPrice: usdPriceOfAccept(req),
+		payTo: req.payTo,
+		description: req.description,
+		mimeType: req.mimeType,
+		maxTimeoutSeconds: req.maxTimeoutSeconds,
+	};
+}
+
+function bazaarStructuredContent(opts: {
+	source: string;
+	mode: "list" | "search" | "details";
+	query?: string;
+	pagination?: unknown;
+	items: any[];
+}) {
+	return {
+		bazaar: {
+			source: opts.source,
+			mode: opts.mode,
+			query: opts.query,
+			pagination: opts.pagination,
+			count: opts.items.length,
+			items: opts.items.map((it: any) => summarizeBazaarItem(it)),
+		},
+	};
 }
 
 // ── Tool registration ────────────────────────────────────────────────────────
@@ -571,39 +572,88 @@ function isTestnetNetwork(caip2: unknown): boolean {
 /**
  * Register x402 payment protocol tools to the MCP server
  */
-export async function registerX402Tools(server: McpServer, env: Env, props: Props): Promise<void> {
+export async function registerX402Tools(
+	server: McpServer,
+	env: Env,
+	props: Props,
+	assets?: AssetsBinding,
+): Promise<void> {
 	// Ensure user has a vault-based account
 	if (!props.email || !props.provider) {
 		throw new Error("Email and provider must be provided in props");
 	}
 
+	// Register x402 widgets (one per result shape; Bazaar tools share one)
+	const requirementsResourceUri = "ui://x402/x402-requirements.html";
+	registerWidget(server, assets, {
+		name: "x402-requirements-widget",
+		htmlPath: "/widgets/x402-requirements.html",
+		resourceUri: requirementsResourceUri,
+		description: "x402 payment requirements discovery UI widget",
+	});
+
+	const paymentResourceUri = "ui://x402/x402-payment.html";
+	registerWidget(server, assets, {
+		name: "x402-payment-widget",
+		htmlPath: "/widgets/x402-payment.html",
+		resourceUri: paymentResourceUri,
+		description: "x402 paid HTTP request result UI widget",
+	});
+
+	const bazaarResourceUri = "ui://x402/bazaar-resources.html";
+	registerWidget(server, assets, {
+		name: "bazaar-resources-widget",
+		htmlPath: "/widgets/bazaar-resources.html",
+		resourceUri: bazaarResourceUri,
+		description: "Bazaar paid API resources directory UI widget",
+	});
+
 	// Discover payment requirements without paying
-	server.tool(
+	registerAppTool(
+		server,
 		"x402_discover_payment_requirements",
-		"Probe an x402-protected HTTP endpoint and return its payment requirements (the `accepts` array from the 402 response) without paying. Use this to inspect cost and supported networks/assets before calling `make_http_request_with_x402`.",
 		{
-			baseURL: z
-				.string()
-				.describe(
-					"Base URL of the x402-protected endpoint, e.g. https://example.x402.goplausible.xyz",
-				),
-			path: z.string().describe("Path under baseURL, e.g. /weather"),
-			method: z.enum(HTTP_METHODS).describe("HTTP method to probe"),
-			queryParams: z
-				.record(z.string())
-				.optional()
-				.describe("Optional query string parameters"),
-			body: z
-				.any()
-				.optional()
-				.describe(
-					"Optional request body. Strings are sent verbatim; objects are JSON-encoded.",
-				),
+			description:
+				"Probe an x402-protected HTTP endpoint and return its payment requirements (the `accepts` array from the 402 response) without paying. Use this to inspect cost and supported networks/assets before calling `make_http_request_with_x402`.",
+			inputSchema: {
+				baseURL: z
+					.string()
+					.describe(
+						"Base URL of the x402-protected endpoint, e.g. https://example.x402.goplausible.xyz",
+					),
+				path: z.string().describe("Path under baseURL, e.g. /weather"),
+				method: z.enum(HTTP_METHODS).describe("HTTP method to probe"),
+				queryParams: z
+					.record(z.string(), z.string())
+					.optional()
+					.describe("Optional query string parameters"),
+				body: z
+					.any()
+					.optional()
+					.describe(
+						"Optional request body. Strings are sent verbatim; objects are JSON-encoded.",
+					),
+			},
+			_meta: {
+				ui: { resourceUri: requirementsResourceUri },
+			},
 		},
 		async ({ baseURL, path, method, queryParams, body }) => {
 			try {
 				const result = await discover({ baseURL, path, method, queryParams, body });
-				return textResponse({ result });
+				return {
+					content: textResponse({ result }).content,
+					structuredContent: {
+						discovery: {
+							endpoint: buildUrl(baseURL, path, queryParams),
+							method,
+							status: result.status,
+							x402: result.x402,
+							x402Version: result.x402Version,
+							accepts: (result.accepts ?? []).map(summarizeRequirement),
+						},
+					},
+				};
 			} catch (error: any) {
 				return errorResponse(`x402 discovery failed: ${error.message || "Unknown error"}`);
 			}
@@ -611,84 +661,85 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 	);
 
 	// Make a paid HTTP request with automatic x402 payment
-	server.tool(
+	registerAppTool(
+		server,
 		"make_http_request_with_x402",
-		"Call an x402-protected HTTP endpoint with automatic USDC/ALGO payment from the active wallet. If `paymentRequirements` is not supplied, this tool runs discovery internally (one extra request). Builds an atomic 2-transaction group (facilitator fee-payer + wallet payment), signs the payment leg with the wallet, and resends with the `PAYMENT-SIGNATURE` header.",
 		{
-			baseURL: z.string().describe("Base URL of the x402-protected endpoint"),
-			path: z.string().describe("Path under baseURL"),
-			method: z.enum(HTTP_METHODS).describe("HTTP method"),
-			queryParams: z
-				.record(z.string())
-				.optional()
-				.describe("Optional query string parameters"),
-			body: z
-				.any()
-				.optional()
-				.describe(
-					"Optional request body. Strings are sent verbatim; objects are JSON-encoded.",
-				),
-			headers: z
-				.record(z.string())
-				.optional()
-				.describe("Optional additional request headers"),
-			correlationId: z
-				.string()
-				.optional()
-				.describe("Optional correlation id; forwarded as X-Correlation-ID header"),
-			maxAmountPerRequest: z
-				.number()
-				.int()
-				.optional()
-				.describe(
-					"Maximum payment in USDC atomic units (1,000,000 = $1.00). If a payment requirement exceeds this, the call is refused.",
-				),
-			paymentRequirements: z
-				.array(
-					z
-						.object({
-							scheme: z.string(),
-							network: z
-								.string()
-								.describe(
-									'CAIP-2 network identifier, e.g. "algorand:SGO1…" for testnet.',
-								),
-							amount: z
-								.string()
-								.optional()
-								.describe(
-									"x402 V2 canonical amount field (atomic units as decimal string).",
-								),
-							maxAmountRequired: z
-								.string()
-								.optional()
-								.describe(
-									"x402 V1 legacy amount field. Either `amount` or `maxAmountRequired` must be present.",
-								),
-							payTo: z.string(),
-							asset: z.string(),
-							maxTimeoutSeconds: z.number().int().optional(),
-							extra: z.object({}).passthrough().optional(),
-						})
-						.passthrough(),
-				)
-				.optional()
-				.describe(
-					"Pre-fetched accepts[] array from a prior x402_discover_payment_requirements call. If omitted, this tool discovers internally. Each element must be an OBJECT with at least { scheme, network, payTo, asset, amount }. Common mistake: passing `preferredNetwork` or `maxAmountPerRequest` as array elements instead of sibling top-level fields.",
-				),
-			preferredNetwork: z
-				.enum(["mainnet", "testnet", "localnet"])
-				.optional()
-				.describe(
-					"TOP-LEVEL sibling of paymentRequirements (NOT an array element). Preferred Algorand network when multiple accepts entries match. If omitted, the cheapest affordable Algorand entry is chosen.",
-				),
-			extensions: z
-				.object({})
-				.passthrough()
-				.optional()
-				.describe(
-					"Optional pre-fetched PaymentRequired extensions (e.g. Bazaar resource details). Passed through to the response under `extensions`.",
-				),
+			description:
+				"Call an x402-protected HTTP endpoint with automatic USDC/ALGO payment from the active wallet on Algorand MainNet. If `paymentRequirements` is not supplied, this tool runs discovery internally (one extra request). Builds an atomic 2-transaction group (facilitator fee-payer + wallet payment), signs the payment leg with the wallet, and resends with the `PAYMENT-SIGNATURE` header.",
+			inputSchema: {
+				baseURL: z.string().describe("Base URL of the x402-protected endpoint"),
+				path: z.string().describe("Path under baseURL"),
+				method: z.enum(HTTP_METHODS).describe("HTTP method"),
+				queryParams: z
+					.record(z.string(), z.string())
+					.optional()
+					.describe("Optional query string parameters"),
+				body: z
+					.any()
+					.optional()
+					.describe(
+						"Optional request body. Strings are sent verbatim; objects are JSON-encoded.",
+					),
+				headers: z
+					.record(z.string(), z.string())
+					.optional()
+					.describe("Optional additional request headers"),
+				correlationId: z
+					.string()
+					.optional()
+					.describe("Optional correlation id; forwarded as X-Correlation-ID header"),
+				maxAmountPerRequest: z
+					.number()
+					.int()
+					.optional()
+					.describe(
+						"Maximum payment in USDC atomic units (1,000,000 = $1.00). If a payment requirement exceeds this, the call is refused.",
+					),
+				paymentRequirements: z
+					.array(
+						z
+							.object({
+								scheme: z.string(),
+								network: z
+									.string()
+									.describe(
+										'CAIP-2 network identifier, e.g. "algorand:wGHE2Pw…" for mainnet.',
+									),
+								amount: z
+									.string()
+									.optional()
+									.describe(
+										"x402 V2 canonical amount field (atomic units as decimal string).",
+									),
+								maxAmountRequired: z
+									.string()
+									.optional()
+									.describe(
+										"x402 V1 legacy amount field. Either `amount` or `maxAmountRequired` must be present.",
+									),
+								payTo: z.string(),
+								asset: z.string(),
+								maxTimeoutSeconds: z.number().int().optional(),
+								extra: z.object({}).passthrough().optional(),
+							})
+							.passthrough(),
+					)
+					.optional()
+					.describe(
+						"Pre-fetched accepts[] array from a prior x402_discover_payment_requirements call. If omitted, this tool discovers internally. Each element must be an OBJECT with at least { scheme, network, payTo, asset, amount }. Common mistake: passing `maxAmountPerRequest` as an array element instead of a sibling top-level field.",
+					),
+				extensions: z
+					.object({})
+					.passthrough()
+					.optional()
+					.describe(
+						"Optional pre-fetched PaymentRequired extensions (e.g. Bazaar resource details). Passed through to the response under `extensions`.",
+					),
+			},
+			_meta: {
+				ui: { resourceUri: paymentResourceUri },
+			},
 		},
 		async ({
 			baseURL,
@@ -700,7 +751,6 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 			correlationId,
 			maxAmountPerRequest,
 			paymentRequirements,
-			preferredNetwork,
 			extensions,
 		}) => {
 			if (!env.ALGORAND_ALGOD) {
@@ -741,13 +791,8 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 					accepts = discovered.accepts;
 				}
 
-				// Select a requirement we can satisfy on the configured network
-				const { requirement, mcpNetwork } = selectRequirement(
-					accepts,
-					configuredNetwork(env),
-					preferredNetwork,
-					maxAmountPerRequest,
-				);
+				// Select a requirement we can satisfy on MainNet
+				const requirement = selectRequirement(accepts, maxAmountPerRequest);
 
 				// Build and sign the payment group with the vault-held key
 				const paymentHeader = await buildPaymentHeader(env, props, requirement);
@@ -778,20 +823,43 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 				// may use Coinbase's `x-payment-response`. Accept either.
 				const paymentResponseHeader =
 					response.headers["payment-response"] ?? response.headers["x-payment-response"];
-				return textResponse({
-					result,
-					status: response.status,
-					paymentResponse: paymentResponseHeader
-						? decodeBase64Json(paymentResponseHeader)
-						: undefined,
-					paid: {
-						network: mcpNetwork,
-						asset: requirement.asset,
-						amount: getRequirementAmount(requirement),
-						payTo: requirement.payTo,
+				const paymentResponse = paymentResponseHeader
+					? decodeBase64Json(paymentResponseHeader)
+					: undefined;
+				const paid = {
+					network: "mainnet",
+					asset: requirement.asset,
+					assetName: requirement.extra?.name,
+					decimals:
+						typeof requirement.extra?.decimals === "number"
+							? requirement.extra.decimals
+							: undefined,
+					amount: getRequirementAmount(requirement),
+					usdPrice: usdPriceOfAccept(requirement),
+					payTo: requirement.payTo,
+				};
+				return {
+					content: textResponse({
+						result,
+						status: response.status,
+						paymentResponse,
+						paid,
+						extensions,
+					}).content,
+					structuredContent: {
+						payment: {
+							endpoint: buildUrl(baseURL, path, queryParams),
+							method,
+							status: response.status,
+							paid,
+							paymentResponse,
+							resultPreview: snippet(
+								typeof result === "string" ? result : JSON.stringify(result),
+								600,
+							),
+						},
 					},
-					extensions,
-				});
+				};
 			} catch (error: any) {
 				return errorResponse(
 					`x402 paid request failed: ${error.message || "Unknown error"}`,
@@ -801,31 +869,42 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 	);
 
 	// Browse Bazaar-cataloged paid API resources
-	server.tool(
+	registerAppTool(
+		server,
 		"bazaar_list",
-		"Browse paid API resources cataloged in the Bazaar (the discovery directory hosted by the configured facilitator). Returns a compact summary per resource by default; pass `full: true` for the verbatim facilitator response. Supports filtering by `network`, `method`, `merchantId`, plus standard `limit`/`offset` pagination.",
 		{
-			network: z
-				.string()
-				.optional()
-				.describe(
-					'Filter by network. Accepts friendly names ("algorand-mainnet", "algorand-testnet", "algorand-localnet", or bare "mainnet"/"testnet"/"localnet") or raw CAIP-2 strings ("algorand:wGHE2Pw…", "eip155:84532", "solana:EtWT…"). Friendly names are translated to CAIP-2 before the request.',
-				),
-			method: z.enum(HTTP_METHODS).optional().describe("Filter by HTTP method."),
-			merchantId: z.string().optional().describe("Filter by merchant id."),
-			limit: z.number().int().optional().describe("Results per page (default 50, max 100)."),
-			offset: z.number().int().optional().describe("Pagination offset."),
-			full: z
-				.boolean()
-				.optional()
-				.describe(
-					"If true, returns each item verbatim from the facilitator (large — includes full accepts[] and discoveryInfo). If false or omitted, returns a compact summary per item (URL, method, description, popularity counters, and just the Algorand-payable accepts).",
-				),
+			description:
+				"Browse paid API resources cataloged in the Bazaar (the discovery directory hosted by the configured facilitator). Returns a compact summary per resource by default; pass `full: true` for the verbatim facilitator response. Supports filtering by `network`, `method`, `merchantId`, plus standard `limit`/`offset` pagination.",
+			inputSchema: {
+				network: z
+					.string()
+					.optional()
+					.describe(
+						'Filter by network. Accepts friendly names ("algorand-mainnet" or bare "mainnet") or raw CAIP-2 strings ("algorand:wGHE2Pw…", "eip155:84532", "solana:EtWT…"). Friendly names are translated to CAIP-2 before the request. Defaults to Algorand MainNet (Wallet Edition is mainnet-only).',
+					),
+				method: z.enum(HTTP_METHODS).optional().describe("Filter by HTTP method."),
+				merchantId: z.string().optional().describe("Filter by merchant id."),
+				limit: z
+					.number()
+					.int()
+					.optional()
+					.describe("Results per page (default 50, max 100)."),
+				offset: z.number().int().optional().describe("Pagination offset."),
+				full: z
+					.boolean()
+					.optional()
+					.describe(
+						"If true, returns each item verbatim from the facilitator (large — includes full accepts[] and discoveryInfo). If false or omitted, returns a compact summary per item (URL, method, description, popularity counters, and just the Algorand-payable accepts).",
+					),
+			},
+			_meta: {
+				ui: { resourceUri: bazaarResourceUri },
+			},
 		},
 		async ({ network, method, merchantId, limit, offset, full }) => {
 			try {
 				const params: Record<string, string> = {};
-				if (network) params.network = friendlyToCaip2Network(network);
+				params.network = friendlyToCaip2Network(network || "mainnet");
 				if (method) params.method = method;
 				if (merchantId) params.merchantId = merchantId;
 				if (limit !== undefined) params.limit = String(limit);
@@ -837,12 +916,21 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 					: [];
 				const pagination = (responseBody as any)?.pagination;
 
-				return textResponse({
-					source: bazaarBaseUrl(env),
-					pagination,
-					count: items.length,
-					items: full === true ? items : items.map((it: any) => summarizeBazaarItem(it)),
-				});
+				return {
+					content: textResponse({
+						source: bazaarBaseUrl(env),
+						pagination,
+						count: items.length,
+						items:
+							full === true ? items : items.map((it: any) => summarizeBazaarItem(it)),
+					}).content,
+					structuredContent: bazaarStructuredContent({
+						source: bazaarBaseUrl(env),
+						mode: "list",
+						pagination,
+						items,
+					}),
+				};
 			} catch (error: any) {
 				return errorResponse(`Bazaar list failed: ${error.message || "Unknown error"}`);
 			}
@@ -850,76 +938,67 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 	);
 
 	// Search Bazaar paid API resources by keyword
-	server.tool(
+	registerAppTool(
+		server,
 		"bazaar_search",
-		"Search Bazaar paid API resources by keyword. Hits the same /discovery/resources endpoint as bazaar_list but with the `search` query forwarded to the facilitator. Additional filters (`scheme`, `maxUsdPrice`, `asset`, `payTo`, `extensions`, `includeTestnets`) are applied client-side after the response. Defaults to mainnet-only.",
 		{
-			query: z
-				.string()
-				.min(1)
-				.describe("Keyword to match in resource URL and description (minimum 1 char)."),
-			limit: z
-				.number()
-				.int()
-				.min(1)
-				.max(20)
-				.optional()
-				.describe("Max results to return (1–20, default 10)."),
-			network: z
-				.string()
-				.optional()
-				.describe(
-					"Filter by network (friendly name or CAIP-2). See bazaar_list for accepted values.",
-				),
-			includeTestnets: z
-				.boolean()
-				.optional()
-				.describe(
-					"If true, include testnet/devnet networks in the results. Default false (mainnet-only).",
-				),
-			scheme: z
-				.enum(["exact", "upto"])
-				.optional()
-				.describe(
-					"Client-side filter — only return resources whose accepts[] includes this payment scheme.",
-				),
-			maxUsdPrice: z
-				.number()
-				.positive()
-				.optional()
-				.describe(
-					"Client-side filter — exclude resources whose cheapest accepts entry exceeds this USD price (computed from amount + asset decimals). Assumes USDC pricing.",
-				),
-			asset: z
-				.string()
-				.optional()
-				.describe(
-					"Client-side filter — only return resources whose accepts[] includes this asset id.",
-				),
-			payTo: z
-				.string()
-				.optional()
-				.describe(
-					"Client-side filter — only return resources whose accepts[] includes this recipient address.",
-				),
-			extensions: z
-				.string()
-				.optional()
-				.describe(
-					'Client-side filter — only return resources whose discoveryInfo / extensions object contains this key (e.g. "bazaar", "outputSchema").',
-				),
+			description:
+				"Search Bazaar paid API resources by keyword. Hits the same /discovery/resources endpoint as bazaar_list but with the `search` query forwarded to the facilitator. Additional filters (`scheme`, `maxUsdPrice`, `asset`, `payTo`, `extensions`) are applied client-side after the response. Mainnet-only: testnet/devnet-only resources are always excluded.",
+			inputSchema: {
+				query: z
+					.string()
+					.min(1)
+					.describe("Keyword to match in resource URL and description (minimum 1 char)."),
+				limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(20)
+					.optional()
+					.describe("Max results to return (1–20, default 10)."),
+				network: z
+					.string()
+					.optional()
+					.describe(
+						"Filter by network (friendly name or CAIP-2). See bazaar_list for accepted values.",
+					),
+				scheme: z
+					.enum(["exact", "upto"])
+					.optional()
+					.describe(
+						"Client-side filter — only return resources whose accepts[] includes this payment scheme.",
+					),
+				maxUsdPrice: z
+					.number()
+					.positive()
+					.optional()
+					.describe(
+						"Client-side filter — exclude resources whose cheapest accepts entry exceeds this USD price (computed from amount + asset decimals). Assumes USDC pricing.",
+					),
+				asset: z
+					.string()
+					.optional()
+					.describe(
+						"Client-side filter — only return resources whose accepts[] includes this asset id.",
+					),
+				payTo: z
+					.string()
+					.optional()
+					.describe(
+						"Client-side filter — only return resources whose accepts[] includes this recipient address.",
+					),
+				extensions: z
+					.string()
+					.optional()
+					.describe(
+						'Client-side filter — only return resources whose discoveryInfo / extensions object contains this key (e.g. "bazaar", "outputSchema").',
+					),
+			},
+			_meta: {
+				ui: { resourceUri: bazaarResourceUri },
+			},
 		},
-		async ({
-			query,
-			limit,
-			network,
-			includeTestnets,
-			scheme,
-			maxUsdPrice,
-			asset,
-			payTo,
-			extensions,
-		}) => {
+		async ({ query, limit, network, scheme, maxUsdPrice, asset, payTo, extensions }) => {
 			try {
 				const maxResults = limit ?? 10;
 				const caip2Network = network ? friendlyToCaip2Network(network) : undefined;
@@ -937,13 +1016,12 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 					: [];
 
 				// Client-side filters not supported by the server.
-				if (!includeTestnets) {
-					items = items.filter(
-						(it: any) =>
-							Array.isArray(it?.accepts) &&
-							it.accepts.some((a: any) => !isTestnetNetwork(a?.network)),
-					);
-				}
+				// Wallet Edition is mainnet-only: drop testnet/devnet-only resources.
+				items = items.filter(
+					(it: any) =>
+						Array.isArray(it?.accepts) &&
+						it.accepts.some((a: any) => !isTestnetNetwork(a?.network)),
+				);
 				if (scheme) {
 					items = items.filter(
 						(it: any) =>
@@ -982,21 +1060,28 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 
 				items = items.slice(0, maxResults);
 
-				return textResponse({
-					source: bazaarBaseUrl(env),
-					query,
-					filtersApplied: {
-						network: caip2Network,
-						includeTestnets: includeTestnets === true,
-						scheme,
-						maxUsdPrice,
-						asset,
-						payTo,
-						extensions,
-					},
-					count: items.length,
-					items: items.map((it: any) => summarizeBazaarItem(it)),
-				});
+				return {
+					content: textResponse({
+						source: bazaarBaseUrl(env),
+						query,
+						filtersApplied: {
+							network: caip2Network,
+							scheme,
+							maxUsdPrice,
+							asset,
+							payTo,
+							extensions,
+						},
+						count: items.length,
+						items: items.map((it: any) => summarizeBazaarItem(it)),
+					}).content,
+					structuredContent: bazaarStructuredContent({
+						source: bazaarBaseUrl(env),
+						mode: "search",
+						query,
+						items,
+					}),
+				};
 			} catch (error: any) {
 				return errorResponse(`Bazaar search failed: ${error.message || "Unknown error"}`);
 			}
@@ -1004,15 +1089,22 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 	);
 
 	// Fetch full details for a single Bazaar resource
-	server.tool(
+	registerAppTool(
+		server,
 		"bazaar_get_resource_details",
-		"Fetch full details for a single Bazaar resource by its exact `resource` URL. Internally calls /discovery/resources?search=<url> and exact-matches against resourceUrl. Returns the verbatim resource record (accepts[], discoveryInfo / extensions, popularity counters) or an error if no match is found.",
 		{
-			resource: z
-				.string()
-				.describe(
-					"Exact resource URL to fetch details for (must match the resourceUrl as registered in the Bazaar).",
-				),
+			description:
+				"Fetch full details for a single Bazaar resource by its exact `resource` URL. Internally calls /discovery/resources?search=<url> and exact-matches against resourceUrl. Returns the verbatim resource record (accepts[], discoveryInfo / extensions, popularity counters) or an error if no match is found.",
+			inputSchema: {
+				resource: z
+					.string()
+					.describe(
+						"Exact resource URL to fetch details for (must match the resourceUrl as registered in the Bazaar).",
+					),
+			},
+			_meta: {
+				ui: { resourceUri: bazaarResourceUri },
+			},
 		},
 		async ({ resource }) => {
 			try {
@@ -1037,7 +1129,14 @@ export async function registerX402Tools(server: McpServer, env: Env, props: Prop
 						`No Bazaar resource found with resourceUrl=${resource}. The facilitator returned ${items.length} partial match(es) for the substring search.`,
 					);
 				}
-				return textResponse({ source: bazaarBaseUrl(env), resource: exact });
+				return {
+					content: textResponse({ source: bazaarBaseUrl(env), resource: exact }).content,
+					structuredContent: bazaarStructuredContent({
+						source: bazaarBaseUrl(env),
+						mode: "details",
+						items: [exact],
+					}),
+				};
 			} catch (error: any) {
 				return errorResponse(
 					`Bazaar resource lookup failed: ${error.message || "Unknown error"}`,
