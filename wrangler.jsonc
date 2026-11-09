@@ -108,7 +108,8 @@
   //   "GITHUB_CLIENT_ID": "your_github_client_id_here",
   //   "LINKEDIN_CLIENT_SECRET": "your_linkedin_client_secret_here",
   //   "LINKEDIN_CLIENT_ID": "your_linkedin_client_id_here",
-  //   "COOKIE_ENCRYPTION_KEY": "your_cookie_encryption_key_here"
+  //   "COOKIE_ENCRYPTION_KEY": "your_cookie_encryption_key_here",
+  //   "IMAGE_PROXY_KEY": "at least 32 chars; generate with: openssl rand -hex 32",
   //   "TWITTER_CLIENT_SECRET": "your_twitter_client_secret_here",
   //   "TWITTER_CLIENT_ID": "your_twitter_client_id_here"
   //  },

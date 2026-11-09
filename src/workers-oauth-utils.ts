@@ -870,8 +870,6 @@ export async function revokeUpstreamToken(
           client_id: env.TWITTER_CLIENT_ID // harmless extra for some implementations
         });
 
-        console.log(`[WORKER_OAUTH_UTILS] Twitter request params: ${body.toString()}`);
-
         const resp = await fetch("https://api.x.com/2/oauth2/revoke", {
           method: "POST",
           headers: {

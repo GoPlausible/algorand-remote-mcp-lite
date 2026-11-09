@@ -3,6 +3,7 @@ import { getLogo } from "./logoUrl.js";
 import type { AuthRequest, OAuthHelpers } from "./oauth-provider";
 
 import type { Env, Props } from "./types";
+import { handleImageProxyRequest, IMAGE_PROXY_PATH } from "./utils/imageProxy";
 import {
 	clientIdAlreadyApproved,
 	fetchUpstreamAuthToken,
@@ -426,9 +427,6 @@ app.all("/logout", async (c) => {
 		hasToken: !!token,
 		tokenType: token ? typeof token : "undefined",
 		tokenLength: token ? token.length : 0,
-		tokenValue: token
-			? `${token.substring(0, 5)}...${token.substring(token.length - 5)}`
-			: "none",
 		auth: !!auth,
 		bearer: !!bearer,
 	});
@@ -438,8 +436,6 @@ app.all("/logout", async (c) => {
 		console.log("[OAUTH_HANDLER] About to call revokeUpstreamToken with:", {
 			provider,
 			tokenLength: token.length,
-			tokenFirstChars: token.substring(0, 5),
-			tokenLastChars: token.substring(token.length - 5),
 		});
 
 		try {
@@ -475,41 +471,9 @@ app.all("/logout", async (c) => {
 
 /**
  * Image proxy for MCP widget CSP compliance.
- * Fetches external images and serves them from our domain so widgets
- * work across all MCP hosts regardless of resourceDomains support.
+ * Serves only image URLs this server signed (IMAGE_PROXY_KEY), only image content,
+ * with headers that keep it from running as a page. See src/utils/imageProxy.ts.
  */
-app.get("/api/image-proxy", async (c) => {
-	const url = c.req.query("url");
-	if (!url) return c.text("Missing url parameter", 400);
-
-	try {
-		const parsed = new URL(url);
-		if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-			return c.text("Invalid URL", 400);
-		}
-	} catch {
-		return c.text("Invalid URL", 400);
-	}
-
-	try {
-		const upstream = await fetch(url, {
-			headers: { "User-Agent": "AlgorandMCPLite-ImageProxy/1.0" },
-		});
-		if (!upstream.ok) {
-			return c.text(`Upstream error: ${upstream.status}`, upstream.status as any);
-		}
-		const contentType = upstream.headers.get("content-type") || "image/png";
-		return new Response(upstream.body, {
-			status: 200,
-			headers: {
-				"Content-Type": contentType,
-				"Cache-Control": "public, max-age=86400",
-				"Access-Control-Allow-Origin": "*",
-			},
-		});
-	} catch (err: any) {
-		return c.text(`Proxy error: ${err.message}`, 502);
-	}
-});
+app.get(IMAGE_PROXY_PATH, (c) => handleImageProxyRequest(c.req.url, c.env.IMAGE_PROXY_KEY));
 
 export { app as OauthHandler };

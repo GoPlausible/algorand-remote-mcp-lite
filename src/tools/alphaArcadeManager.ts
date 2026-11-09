@@ -11,6 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from "../types";
 import { type AssetsBinding, registerWidget } from "../ui/widgetManager";
+import { IMAGE_PROXY_ORIGIN, proxiedImageUrl } from "../utils/imageProxy";
 import { getPublicKey, signWithTransit } from "../utils/vaultManager";
 
 // ============================================
@@ -250,13 +251,12 @@ export function registerAlphaArcadeTools(
 
 	// Images are proxied through our own worker domain so all MCP hosts
 	// can load them regardless of CSP resourceDomains support for wildcards.
-	const PROXY_ORIGIN = "https://algorandmcplite.goplausible.xyz";
-	const alphaImageDomains = [PROXY_ORIGIN];
+	// The proxy serves only URLs signed here with IMAGE_PROXY_KEY (src/utils/imageProxy.ts).
+	const alphaImageDomains = [IMAGE_PROXY_ORIGIN];
 
-	/** Rewrite an image URL to go through our image proxy */
-	function proxyImageUrl(url?: string): string | undefined {
-		if (!url) return undefined;
-		return `${PROXY_ORIGIN}/api/image-proxy?url=${encodeURIComponent(url)}`;
+	/** Rewrite an image URL to a signed image-proxy URL (undefined if it cannot be proxied) */
+	function proxyImageUrl(url?: string): Promise<string | undefined> {
+		return proxiedImageUrl(url, env.IMAGE_PROXY_KEY);
 	}
 
 	registerWidget(server, assets, {
@@ -356,7 +356,8 @@ export function registerAlphaArcadeTools(
 						throw apiErr;
 					}
 				}
-				const summary = markets.map((m) => {
+				const images = await Promise.all(markets.map((m) => proxyImageUrl(m.image)));
+				const summary = markets.map((m, i) => {
 					const vol =
 						typeof m.volume === "number"
 							? m.volume
@@ -365,7 +366,7 @@ export function registerAlphaArcadeTools(
 						id: m.id,
 						title: m.title || `Market ${m.marketAppId}`,
 						marketAppId: m.marketAppId,
-						image: proxyImageUrl(m.image),
+						image: images[i],
 						yesAssetId: m.yesAssetId || undefined,
 						noAssetId: m.noAssetId || undefined,
 						yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
@@ -435,7 +436,8 @@ export function registerAlphaArcadeTools(
 				console.log(
 					`[Alpha] alpha_get_reward_markets — returned ${markets.length} markets`,
 				);
-				const summary = markets.map((m) => {
+				const images = await Promise.all(markets.map((m) => proxyImageUrl(m.image)));
+				const summary = markets.map((m, i) => {
 					const vol =
 						typeof m.volume === "number"
 							? m.volume
@@ -444,7 +446,7 @@ export function registerAlphaArcadeTools(
 						id: m.id,
 						title: m.title || `Market ${m.marketAppId}`,
 						marketAppId: m.marketAppId,
-						image: proxyImageUrl(m.image),
+						image: images[i],
 						yesAssetId: m.yesAssetId || undefined,
 						noAssetId: m.noAssetId || undefined,
 						yesPrice: m.yesProb != null ? formatPriceFromProb(m.yesProb) : undefined,
@@ -558,7 +560,7 @@ export function registerAlphaArcadeTools(
 				console.log(
 					`[Alpha] alpha_get_market — success, title="${market.title}", image="${market.image}", categories=${JSON.stringify(market.categories)}, source="${market.source}"`,
 				);
-				const proxied = { ...market, image: proxyImageUrl(market.image) };
+				const proxied = { ...market, image: await proxyImageUrl(market.image) };
 				return {
 					content: [{ type: "text" as const, text: JSON.stringify(proxied, null, 2) }],
 					structuredContent: {

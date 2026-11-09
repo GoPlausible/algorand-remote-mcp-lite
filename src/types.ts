@@ -534,6 +534,7 @@ export interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   COOKIE_ENCRYPTION_KEY?: string;
+  IMAGE_PROXY_KEY?: string; // Secret that signs /api/image-proxy URLs (src/utils/imageProxy.ts)
 }
 export interface Props extends Record<string, unknown> {
   name: string;
