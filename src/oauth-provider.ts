@@ -860,7 +860,6 @@ class OAuthProviderImpl {
     if (this.isTokenEndpoint(url)) {
       console.log('[OAUTH_PROVIDER] Handling token endpoint request');
       const parsed = await this.parseTokenEndpointRequest(request, env);
-      console.log('[OAUTH_PROVIDER] Parsed token endpoint request:', parsed);
       // If parsing failed, return the error response
       if (parsed instanceof Response) {
         return this.addCorsHeaders(parsed, request);
