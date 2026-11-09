@@ -35,7 +35,9 @@ function formatAmount(amount: number, decimals?: number): string {
   const dec = decimals ?? 6;
   const value = amount / 10 ** dec;
   return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
+    // Intl throws a RangeError when the minimum exceeds the maximum, as it would for an
+    // asset with 0 or 1 decimals
+    minimumFractionDigits: Math.min(2, dec),
     maximumFractionDigits: dec,
   });
 }
