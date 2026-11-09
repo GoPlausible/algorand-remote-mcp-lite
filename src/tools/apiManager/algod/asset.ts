@@ -6,8 +6,43 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env, AssetVerificationResponse, AssetDetailsResponse } from '../../../types';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
+
+/** Convert ipfs:// to HTTPS gateway URL */
+function resolveIpfs(url: string): string {
+  if (url.startsWith('ipfs://')) return `https://ipfs.io/ipfs/${url.slice(7)}`;
+  return url;
+}
+
+/** Fetch ARC-3 / ARC-69 metadata JSON from an asset URL, returns null on any failure */
+async function fetchAssetMetadata(rawUrl: string): Promise<Record<string, any> | null> {
+  try {
+    const url = resolveIpfs(rawUrl);
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('json') && !contentType.includes('text')) return null;
+    const text = await res.text();
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch Pera asset details for enrichment (mainnet only), returns null on any failure */
+async function fetchPeraAssetDetails(assetId: number, env: Env): Promise<AssetDetailsResponse | null> {
+  try {
+    const baseUrl = env.PERA_WALLET_API_URL || 'https://mainnet.api.perawallet.app/v1/public';
+    const res = await fetch(`${baseUrl}/assets/${assetId}/`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return null;
+    return await res.json() as AssetDetailsResponse;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Create and validate an Algorand client
@@ -185,20 +220,34 @@ async function getAssetsByUnitName(unitName: string, env: Env) {
 /**
  * Register asset API tools to the MCP server
  */
-export function registerAssetApiTools(server: McpServer, env: Env): void {
+export function registerAssetApiTools(server: McpServer, env: Env, assets?: AssetsBinding): void {
+  // Register asset detail card widget
+  const assetCardResourceUri = 'ui://asset/asset-card.html';
+  registerWidget(server, assets, {
+    name: 'asset-card-widget',
+    htmlPath: '/widgets/asset-card.html',
+    resourceUri: assetCardResourceUri,
+    description: 'Interactive asset detail card UI widget',
+    resourceDomains: ['https://asa-list.tinyman.org', 'https://algorand-wallet-mainnet.s3.amazonaws.com', 'https://algorand-wallet-mainnet.b-cdn.net', 'https://ipfs.io'],
+  });
   // Get asset information
-  server.tool(
+  registerAppTool(server,
     'algod_get_asset_info',
-    'Get asset details from algod',
     {
-      assetId: z.number().int().describe('The asset ID')
+      description: 'Get asset details from algod',
+      inputSchema: {
+        assetId: z.number().int().describe('The asset ID')
+      },
+      _meta: {
+        ui: { resourceUri: assetCardResourceUri },
+      },
     },
     async ({ assetId }) => {
 
       if (!env.ALGORAND_ALGOD) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand node URL not configured'
           }]
         };
@@ -236,11 +285,74 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
           }
         };
 
-        return ResponseProcessor.processResponse(formattedResponse);
+        // Fetch NFT metadata and Pera verification in parallel
+        const assetUrl = assetParams.url ? Buffer.from(assetParams.url).toString() : null;
+        const isMainnet = (env.ALGORAND_NETWORK || 'mainnet') === 'mainnet';
+
+        const [metadata, peraData] = await Promise.all([
+          assetUrl ? fetchAssetMetadata(assetUrl) : Promise.resolve(null),
+          isMainnet ? fetchPeraAssetDetails(Number(assetId), env) : Promise.resolve(null),
+        ]);
+
+        // Extract useful fields from ARC-3 / ARC-69 metadata JSON
+        const metaImage = metadata?.image
+          ? resolveIpfs(String(metadata.image))
+          : null;
+        const metaDescription = metadata?.description
+          ? String(metadata.description)
+          : null;
+        const metaExternalUrl = metadata?.external_url
+          ? String(metadata.external_url)
+          : null;
+        const metaProperties: Record<string, string> | null = metadata?.properties
+          ? Object.fromEntries(
+              Object.entries(metadata.properties)
+                .filter(([, v]) => v !== null && v !== undefined && typeof v !== 'object')
+                .map(([k, v]) => [k, String(v)])
+            )
+          : null;
+        const hasMetadata = !!(metaImage || metaDescription || metaExternalUrl || metaProperties);
+
+        // Transform algod response to match AssetDetailsData for the asset-card widget
+        // Enrich with Pera data when available (mainnet only)
+        const assetDetails = {
+          asset_id: Number(assetId),
+          name: assetParams.name || null,
+          unit_name: assetParams.unitName || null,
+          fraction_decimals: Number(assetParams.decimals ?? 0),
+          total_supply: Number(assetParams.total ?? 0),
+          total_supply_as_str: String(assetParams.total ?? '0'),
+          creator_address: assetParams.creator || '',
+          verification_tier: peraData?.verification_tier || ('unverified' as const),
+          is_collectible: peraData?.is_collectible ?? hasMetadata,
+          circulating_supply: peraData?.circulating_supply || String(assetParams.total ?? '0'),
+          url: assetUrl,
+          logo: peraData?.logo || null,
+          usd_value: peraData?.usd_value || null,
+          usd_value_24_hour_ago: peraData?.usd_value_24_hour_ago || null,
+          description: metaDescription || peraData?.description || null,
+          collectible: peraData?.collectible || null,
+          nft_image: metaImage,
+          external_url: metaExternalUrl,
+          properties: metaProperties,
+        };
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(formattedResponse);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify(assetDetails);
+        } catch {
+          textContent = JSON.stringify(assetDetails);
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { assetDetails },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error getting asset info: ${error.message || 'Unknown error'}`
           }]
         };
@@ -365,27 +477,30 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
   // );
 
   // Get detailed asset information from Pera Wallet
-  server.tool(
+  registerAppTool(server,
     'pera_verified_asset_query',
-    'Get detailed information about an Algorand asset from Pera Wallet',
     {
-      assetId: z.number().int().min(0).max(9223372036854776000)
-        .describe('Asset ID to get detailed information')
+      description: 'Get detailed information about an Algorand asset from Pera Wallet',
+      inputSchema: {
+        assetId: z.number().int().min(0)
+          .describe('Asset ID to get detailed information')
+      },
+      _meta: {
+        ui: { resourceUri: assetCardResourceUri },
+      },
     },
     async ({ assetId }) => {
-      // Get the Pera Wallet API URL from environment variables or use default
       const peraWalletApiBaseUrl = env.PERA_WALLET_API_URL || 'https://mainnet.api.perawallet.app/v1/public';
       const assetDetailsEndpoint = `${peraWalletApiBaseUrl}/assets/${assetId}/`;
 
       try {
-        // Make API request to Pera Wallet
         const response = await fetch(assetDetailsEndpoint);
 
         if (!response.ok) {
           if (response.status === 404) {
             return {
               content: [{
-                type: 'text',
+                type: 'text' as const,
                 text: `Asset with ID ${assetId} not found in Pera Wallet database`
               }]
             };
@@ -396,25 +511,44 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
 
         const data = await response.json() as AssetDetailsResponse;
 
-        return ResponseProcessor.processResponse(data);
+        const textResponse = ResponseProcessor.processResponse(data);
+        return {
+          content: textResponse.content,
+          structuredContent: { assetDetails: data },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error fetching asset details: ${error.message || 'Unknown error'}`
           }]
         };
       }
     }
   );
+  // Register asset search widget
+  const assetSearchResourceUri = 'ui://asset/asset-search.html';
+  registerWidget(server, assets, {
+    name: 'asset-search-widget',
+    htmlPath: '/widgets/asset-search.html',
+    resourceUri: assetSearchResourceUri,
+    description: 'Interactive asset search results UI widget',
+  });
+
   // Get verified asset(s) by name
-  server.tool(
+  registerAppTool(server,
     'pera_verified_assets_search',
-    'Search PeraWallet verified Algorand asset(s) by asset name, unit name, or creator address',
     {
-      query: z.string().min(1).describe('Asset name, unit name, or creator address to search for')
+      description: 'Search PeraWallet verified Algorand asset(s) by asset name, unit name, or creator address',
+      inputSchema: {
+        query: z.string().min(1).describe('Asset name, unit name, or creator address to search for'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: assetSearchResourceUri },
+      },
     },
-    async ({ query }) => {
+    async ({ query, pageToken }) => {
       try {
         let assets: any[] = [];
 
@@ -436,18 +570,44 @@ export function registerAssetApiTools(server: McpServer, env: Env): void {
 
         if (filteredAssets.length === 0) {
           return {
-            content: [{
-              type: 'text',
-              text: `No verified assets found for: ${query}`
-            }]
+            content: [{ type: 'text' as const, text: `No verified assets found for: ${query}` }],
+            structuredContent: {
+              searchResults: { query, assets: [], totalResults: 0 },
+            },
           };
         }
 
-        return ResponseProcessor.processResponse(filteredAssets);
+        // Paginate for widget
+        const perPage = 10;
+        const pageNum = pageToken ? (() => {
+          try { return Number.parseInt(atob(pageToken).replace('page_', '')) || 1; } catch { return 1; }
+        })() : 1;
+        const startIdx = (pageNum - 1) * perPage;
+        const endIdx = startIdx + perPage;
+        const paginatedAssets = filteredAssets.slice(startIdx, endIdx);
+        const totalPages = Math.ceil(filteredAssets.length / perPage);
+
+        const searchResults = {
+          query,
+          assets: paginatedAssets,
+          totalResults: filteredAssets.length,
+          pagination: filteredAssets.length > perPage ? {
+            currentPage: pageNum,
+            totalPages,
+            hasNextPage: endIdx < filteredAssets.length,
+            hasPrevPage: pageNum > 1,
+          } : undefined,
+        };
+
+        const textResponse = ResponseProcessor.processResponse(filteredAssets, pageToken);
+        return {
+          content: textResponse.content,
+          structuredContent: { searchResults },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error searching verified asset(s): ${error.message || 'Unknown error'}`
           }]
         };

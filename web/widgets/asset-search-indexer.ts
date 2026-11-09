@@ -1,0 +1,316 @@
+import {
+  App,
+  applyDocumentTheme,
+  applyHostFonts,
+  applyHostStyleVariables,
+  type McpUiHostContext,
+} from "@modelcontextprotocol/ext-apps";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import "./asset-search-indexer.css";
+
+const ALLO_SVG = `<svg width="16" height="16" viewBox="0 0 865 503" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M461.7 389.6c5.7 0 10.2-4.6 10.2-10.2V124.6c0-5.9-5-10.6-10.9-10.2l-36.8 2.6c-5.4.4-9.5 4.8-9.5 10.2v252.2c0 5.6 4.6 10.2 10.2 10.2h36.8z" fill="#4F40AA"/><path d="M386.1 379.4c0 5.6-4.6 10.2-10.2 10.2h-36.8c-5.6 0-10.2-4.6-10.2-10.2V163.9c0-5.4 4.2-9.8 9.5-10.2l36.8-2.6c5.9-.4 10.9 4.3 10.9 10.2v218z" fill="#4F40AA"/><path fill-rule="evenodd" clip-rule="evenodd" d="M183.8 264.1c-5.7 2-12.3-.7-14.3-6.4l-8.4-23.8c-1.7-4.7.2-10 4.8-11.9 3.7-1.6 7.9-3.1 12.4-4.4 8.1-2.4 16.6-4.3 25.5-5.7 9.1-1.4 17.2-2.1 24.4-2.1 14.9 0 27.8 2.8 38.8 8.5 11.3 5.7 19.9 13.6 25.9 23.8 6.2 10.2 9.3 22 9.3 35.5v99.6c0 5.6-4.6 10.2-10.2 10.2h-15.9c-3.3 0-6.3-1.6-8.3-4.2l-2.7-3.6c-3.9-5.3-11.6-5.6-16.6-1.3-3.4 2.8-7 5.3-10.7 7.4-7.2 4-14.9 6-23 6-21.6 0-37.6-5.3-48.2-16s-15.8-24.6-15.8-41.9c0-18.2 6.2-31.5 18.7-39.8s30.1-12.8 50-12.8h26.3c.5 0 .9-.5.7-1-.2-.5-.2-.6-.2-.6-.7-7.3-3.4-12.8-7.9-16.6-4.3-4-10-6-16.9-6-7.2 0-15.2 1.1-24.1 3.2-4.5 1.1-8.6 2.3-12.5 3.6zm20 56.1c-3.6 3.8-5.4 8.2-5.4 13.2 0 2.8.7 5.4 2.2 7.8 1.7 2.4 3.7 4.3 6.1 5.7 2.6 1.4 5.5 2.1 8.7 2.1 5 0 10.2-1.1 15.5-3.2 4-1.8 7.8-4.1 11.6-7 2.3-1.8 3.5-4.6 3.5-7.5v-6.5c0-5.6-4.6-10.2-10.2-10.2h-17.1c-6.2 0-11.1 1.9-14.7 5.7z" fill="#4F40AA"/><path d="M535.3 381.2c14.1 6.8 30.4 10.3 48.9 10.3 18.3 0 34.5-3.6 48.6-10.6 14.3-7.1 25.6-17.4 33.8-30.9 8.2-13.5 12.3-29.6 12.3-48.3 0-19.6-4-36.2-12-49.7-8-13.7-19-24.1-33.1-31.2-14.1-7.1-30.4-10.6-48.9-10.6-18.1 0-34.3 3.7-48.6 11-14.1 7.3-25.2 17.7-33.4 31.2-8 13.5-12.1 29.8-12.3 49 0 19.2 3.9 35.6 11.6 49.4 8 13.5 19 23.7 33.1 30.5zm69-40.8c-5.4 3.5-12 5.3-19.7 5.3-7.5 0-14.1-1.9-19.7-5.7-5.4-3.8-9.6-9-12.7-15.6-3-6.9-4.6-14.5-4.6-23 0-9.2 1.5-17.2 4.6-23.8 3-6.6 7.4-11.8 13-15.6 5.9-3.8 12.6-5.7 20.1-5.7s12.6 2 18 6c5.6 3.8 9.9 9.1 12.7 16 3 6.9 4.6 14.7 4.6 23.5 0 8.7-1.5 16.4-4.6 23-3 6.6-7.4 11.8-13 15.6z" fill="#4F40AA"/></svg>`;
+
+interface AssetParams {
+  name?: string;
+  "unit-name"?: string;
+  total: number;
+  decimals: number;
+  creator: string;
+  "default-frozen"?: boolean;
+  url?: string;
+}
+
+interface AssetEntry {
+  index: number;
+  params: AssetParams;
+}
+
+interface AssetSearchFilters {
+  name?: string;
+  unit?: string;
+  creator?: string;
+}
+
+interface AssetSearchData {
+  assets: AssetEntry[];
+  totalAssets: number;
+  'next-token': string | null;
+  filters: AssetSearchFilters;
+}
+
+interface AssetSearchIndexerStructuredContent {
+  assetSearch: AssetSearchData;
+}
+
+// Filter/sort state
+let originalAssets: AssetEntry[] = [];
+let asiFilterQuery = "";
+let asiSortOrder = "id-asc";
+
+function truncateAddress(addr: string): string {
+  if (addr.length <= 16) return addr;
+  return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
+}
+
+function formatSupply(total: number, decimals: number): string {
+  if (decimals > 0) {
+    const adjusted = total / 10 ** decimals;
+    return adjusted.toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: Math.min(decimals, 6),
+    });
+  }
+  return total.toLocaleString();
+}
+
+function renderFilterBadges(filters: AssetSearchFilters): string {
+  const badges: string[] = [];
+  if (filters.name) {
+    badges.push(`<span class="asi-filter-badge">name: ${filters.name}</span>`);
+  }
+  if (filters.unit) {
+    badges.push(`<span class="asi-filter-badge">unit: ${filters.unit}</span>`);
+  }
+  if (filters.creator) {
+    badges.push(`<span class="asi-filter-badge">creator: ${truncateAddress(filters.creator)}</span>`);
+  }
+  return badges.length > 0 ? `<div class="asi-filters">${badges.join("")}</div>` : "";
+}
+
+function renderAssetTableRows(assets: AssetEntry[]): string {
+  if (assets.length === 0) {
+    return `<tr><td colspan="6" class="asi-empty-cell">No assets match the current filter.</td></tr>`;
+  }
+  let rows = "";
+  for (let i = 0; i < assets.length; i++) {
+    const asset = assets[i];
+    const name = asset.params.name || "Unnamed";
+    const unit = asset.params["unit-name"] || "-";
+    const supply = formatSupply(asset.params.total, asset.params.decimals);
+    const creator = truncateAddress(asset.params.creator);
+    const rowClass = i % 2 === 1 ? " asi-row-alt" : "";
+
+    rows += `
+      <tr class="asi-row${rowClass}">
+        <td class="asi-cell asi-mono">${asset.index}</td>
+        <td class="asi-cell">${name}</td>
+        <td class="asi-cell">${unit}</td>
+        <td class="asi-cell asi-right">${supply}</td>
+        <td class="asi-cell asi-mono asi-address" title="${asset.params.creator}">${creator}</td>
+        <td class="asi-cell asi-cell-allo"><button class="allo-link" data-url="https://allo.info/asset/${asset.index}" title="View on allo.info">${ALLO_SVG}</button></td>
+      </tr>
+    `;
+  }
+  return rows;
+}
+
+function renderTable(assets: AssetEntry[]): string {
+  return `
+    <div class="asi-table-wrap">
+      <table class="asi-table" id="asi-table">
+        <thead>
+          <tr class="asi-thead-row">
+            <th class="asi-th">ID</th>
+            <th class="asi-th">Name</th>
+            <th class="asi-th">Unit</th>
+            <th class="asi-th asi-right">Total Supply</th>
+            <th class="asi-th">Creator</th>
+            <th class="asi-th"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderAssetTableRows(assets)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyAsiFilters() {
+  let filtered = originalAssets.slice();
+
+  if (asiFilterQuery) {
+    const q = asiFilterQuery.toLowerCase();
+    filtered = filtered.filter((asset) => {
+      const name = (asset.params.name || "").toLowerCase();
+      const unit = (asset.params["unit-name"] || "").toLowerCase();
+      return name.includes(q) || unit.includes(q);
+    });
+  }
+
+  if (asiSortOrder === "id-asc") {
+    filtered.sort((a, b) => a.index - b.index);
+  } else if (asiSortOrder === "id-desc") {
+    filtered.sort((a, b) => b.index - a.index);
+  } else if (asiSortOrder === "name-asc") {
+    filtered.sort((a, b) => (a.params.name || "").localeCompare(b.params.name || ""));
+  } else if (asiSortOrder === "name-desc") {
+    filtered.sort((a, b) => (b.params.name || "").localeCompare(a.params.name || ""));
+  } else if (asiSortOrder === "supply-desc") {
+    filtered.sort((a, b) => b.params.total - a.params.total);
+  } else if (asiSortOrder === "supply-asc") {
+    filtered.sort((a, b) => a.params.total - b.params.total);
+  }
+
+  const tbody = root.querySelector("#asi-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = renderAssetTableRows(filtered);
+}
+
+function renderSearchResults(data: AssetSearchData): string {
+  const filterBadges = renderFilterBadges(data.filters);
+
+  const bodyHtml = data.assets.length > 0
+    ? renderTable(data.assets)
+    : `<div class="asi-empty">No assets found matching the search criteria.</div>`;
+
+  const nextTokenHtml = data['next-token']
+    ? `<div class="asi-footer">More results available (next-token: ${data['next-token'].slice(0, 12)}...)</div>`
+    : "";
+
+  return `
+    <div class="asi-card">
+      <div class="asi-header">
+        <div class="asi-header-label">Asset Search Results</div>
+        <div class="asi-header-count">${data.totalAssets} asset${data.totalAssets !== 1 ? "s" : ""} found</div>
+        ${filterBadges}
+      </div>
+      <div class="list-controls">
+        <input type="text" class="list-filter-input" id="asi-filter" placeholder="Filter by name or unit..." value="${asiFilterQuery}">
+        <select class="list-sort-select" id="asi-sort">
+          <option value="id-asc"${asiSortOrder === "id-asc" ? " selected" : ""}>ID (low &rarr; high)</option>
+          <option value="id-desc"${asiSortOrder === "id-desc" ? " selected" : ""}>ID (high &rarr; low)</option>
+          <option value="name-asc"${asiSortOrder === "name-asc" ? " selected" : ""}>Name (A-Z)</option>
+          <option value="name-desc"${asiSortOrder === "name-desc" ? " selected" : ""}>Name (Z-A)</option>
+          <option value="supply-desc"${asiSortOrder === "supply-desc" ? " selected" : ""}>Supply (high &rarr; low)</option>
+          <option value="supply-asc"${asiSortOrder === "supply-asc" ? " selected" : ""}>Supply (low &rarr; high)</option>
+        </select>
+      </div>
+      ${bodyHtml}
+      ${nextTokenHtml}
+    </div>
+  `;
+}
+
+function renderLoading(query?: string): string {
+  return `
+    <div class="asi-card loading">
+      <div class="asi-loading-pulse"></div>
+      <div class="asi-loading-text">Searching${query ? ` for "${query}"` : " assets"}...</div>
+    </div>
+  `;
+}
+
+function renderNotFound(message: string): string {
+  return `
+    <div class="asi-card asi-not-found">
+      <div class="asi-nf-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          <path d="M8 11h6"/><path d="M11 8v6"/>
+        </svg>
+      </div>
+      <div class="asi-nf-title">No Results Found</div>
+      <div class="asi-nf-text">${message}</div>
+    </div>
+  `;
+}
+
+function renderError(message: string): string {
+  return `
+    <div class="asi-card error">
+      <div class="asi-error-icon">!</div>
+      <div class="asi-error-text">${message}</div>
+    </div>
+  `;
+}
+
+function attachAsiFilterHandlers() {
+  const filterInput = root.querySelector("#asi-filter") as HTMLInputElement | null;
+  const sortSelect = root.querySelector("#asi-sort") as HTMLSelectElement | null;
+
+  if (filterInput) {
+    filterInput.value = asiFilterQuery;
+    filterInput.addEventListener("input", () => {
+      asiFilterQuery = filterInput.value;
+      applyAsiFilters();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.value = asiSortOrder;
+    sortSelect.addEventListener("change", () => {
+      asiSortOrder = sortSelect.value;
+      applyAsiFilters();
+    });
+  }
+}
+
+// --- App lifecycle ---
+
+const root = document.getElementById("root")!;
+root.innerHTML = renderLoading();
+
+function handleHostContextChanged(ctx: McpUiHostContext) {
+  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+  if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+  if (ctx.safeAreaInsets) {
+    root.style.paddingTop = `${ctx.safeAreaInsets.top}px`;
+    root.style.paddingRight = `${ctx.safeAreaInsets.right}px`;
+    root.style.paddingBottom = `${ctx.safeAreaInsets.bottom}px`;
+    root.style.paddingLeft = `${ctx.safeAreaInsets.left}px`;
+  }
+}
+
+const app = new App({ name: "asset-search-indexer-widget", version: "1.0.0" });
+
+// Handle allo.info link clicks via host navigation (postMessage to host)
+document.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>(".allo-link");
+  if (btn) {
+    const url = btn.dataset.url;
+    if (url) app.openLink({ url });
+  }
+});
+
+app.ontoolinput = (params) => {
+  const args = params.arguments as { name?: string; unit?: string } | undefined;
+  asiFilterQuery = "";
+  asiSortOrder = "id-asc";
+  root.innerHTML = renderLoading(args?.name || args?.unit);
+};
+
+app.ontoolinputpartial = (params) => {
+  const args = params.arguments as { name?: string; unit?: string } | undefined;
+  if (args?.name || args?.unit) {
+    root.innerHTML = renderLoading(args.name || args.unit);
+  }
+};
+
+app.ontoolresult = (result: CallToolResult) => {
+  const sc = result.structuredContent as AssetSearchIndexerStructuredContent | undefined;
+  if (sc?.assetSearch) {
+    originalAssets = sc.assetSearch.assets;
+    root.innerHTML = renderSearchResults(sc.assetSearch);
+    attachAsiFilterHandlers();
+  } else {
+    root.innerHTML = renderNotFound("Try searching by name, unit, or creator address.");
+  }
+};
+
+app.ontoolcancelled = () => {
+  root.innerHTML = renderError("Request was cancelled.");
+};
+
+app.onerror = (err) => {
+  console.error("App error:", err);
+  root.innerHTML = renderError("An error occurred.");
+};
+
+app.onhostcontextchanged = handleHostContextChanged;
+
+app.connect().then(() => {
+  const ctx = app.getHostContext();
+  if (ctx) handleHostContextChanged(ctx);
+});

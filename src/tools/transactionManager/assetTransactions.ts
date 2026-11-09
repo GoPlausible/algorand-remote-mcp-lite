@@ -7,8 +7,9 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../../types';
-import * as msgpack from "algo-msgpack-with-bigint"
+import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import {
   getUserAddress,
   getPublicKey,
@@ -41,25 +42,36 @@ function ConcatArrays(...arrs: ArrayLike<number>[]) {
 /**
  * Register asset transaction management tools to the MCP server
  */
-export function registerAssetTransactionTools(server: McpServer, env: Env, props: Props): void {
+export function registerAssetTransactionTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+  // Register txn-confirm widget (shared with general transactions)
+  const txnConfirmResourceUri = 'ui://txn/txn-confirm.html';
+  // Widget already registered by generalTransaction — skip re-registration here
+  // but we still need the URI for _meta
+
   // Create a new Algorand Standard Asset (ASA)
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_create',
-    'Create a new Algorand Standard Asset (ASA)',
     {
-      creator: z.string().describe('Creator address'),
-      name: z.string().describe('Asset name'),
-      unitName: z.string().describe('Unit name (ticker)'),
-      totalSupply: z.number().describe('Total supply'),
-      decimals: z.number().min(0).max(19).default(0).describe('Decimal precision (0-19)'),
-      defaultFrozen: z.boolean().default(false).describe('Whether accounts are frozen by default'),
-      url: z.string().optional().describe('URL for asset information'),
-      metadataHash: z.string().optional().describe('Metadata hash (32-byte string)'),
-      manager: z.string().optional().describe('Manager address'),
-      reserve: z.string().optional().describe('Reserve address'),
-      freeze: z.string().optional().describe('Freeze address'),
-      clawback: z.string().optional().describe('Clawback address'),
-      note: z.string().optional().describe('Optional transaction note')
+      description: 'Create a new Algorand Standard Asset (ASA)',
+      inputSchema: {
+        creator: z.string().describe('Creator address'),
+        name: z.string().describe('Asset name'),
+        unitName: z.string().describe('Unit name (ticker)'),
+        totalSupply: z.number().describe('Total supply'),
+        decimals: z.number().min(0).max(19).default(0).describe('Decimal precision (0-19)'),
+        defaultFrozen: z.boolean().default(false).describe('Whether accounts are frozen by default'),
+        url: z.string().optional().describe('URL for asset information'),
+        metadataHash: z.string().optional().describe('Metadata hash (32-byte string)'),
+        manager: z.string().optional().describe('Manager address'),
+        reserve: z.string().optional().describe('Reserve address'),
+        freeze: z.string().optional().describe('Freeze address'),
+        clawback: z.string().optional().describe('Clawback address'),
+        note: z.string().optional().describe('Optional transaction note'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+      },
     },
     async ({ creator, name, unitName, totalSupply, decimals, defaultFrozen,
       url, metadataHash, manager, reserve, freeze, clawback, note }) => {
@@ -119,21 +131,23 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
         });
 
         // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        const txnConfirm = {
+          type: 'asset-create' as const,
           txID: txn.txID(),
           encodedTxn: Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64'),
-          txnInfo: {
-            type: 'asset-create',
-            creator,
-            assetName: name,
-            unitName,
-            totalSupply,
-            decimals,
-            fee: Number(params.fee),
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          creator,
+          assetName: name,
+          unitName,
+          totalSupply,
+          decimals,
+          fee: Number(params.fee),
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+        };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -146,13 +160,19 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
   );
 
   // Opt-in to an asset
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_optin',
-    'Opt-in to an Algorand Standard Asset (ASA)',
     {
-      address: z.string().describe('Account address to opt-in'),
-      assetID: z.number().describe('Asset ID to opt-in to'),
-      note: z.string().optional().describe('Optional transaction note')
+      description: 'Opt-in to an Algorand Standard Asset (ASA)',
+      inputSchema: {
+        address: z.string().describe('Account address to opt-in'),
+        assetID: z.number().describe('Asset ID to opt-in to'),
+        note: z.string().optional().describe('Optional transaction note'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+      },
     },
     async ({ address, assetID, note }) => {
 
@@ -193,18 +213,20 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
         });
 
         // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        const txnConfirm = {
+          type: 'asset-optin' as const,
           txID: txn.txID(),
           encodedTxn: Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64'),
-          txnInfo: {
-            type: 'asset-optin',
-            address,
-            assetID,
-            fee: Number(params.fee),
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          address,
+          assetID,
+          fee: Number(params.fee),
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+        };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -216,11 +238,17 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
     }
   );
   // Opt-in to USDC
-  server.tool(
+  registerAppTool(
+    server,
     'wallet_usdc_optin',
-    'Opt-in agent wallet to USDC',
     {
-      note: z.string().optional().describe('Optional transaction note')
+      description: 'Opt-in agent wallet to USDC',
+      inputSchema: {
+        note: z.string().optional().describe('Optional transaction note'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+      },
     },
     async ({ note }) => {
       if (!props.email || !props.provider) {
@@ -273,12 +301,9 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           throw new Error('Failed to get signature from vault');
         }
         const signature = Buffer.from(signatureResult.signature, 'base64');
-         const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-        const signedTxn: object = {
-          txn: txnObj,
-          sig: signature,
-        };
-        const encodedTxnUint8Array =new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true }))
+        // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+        const stxn = new algosdk.SignedTransaction({ txn, sig: new Uint8Array(signature) });
+        const encodedTxnUint8Array = algosdk.encodeMsgpack(stxn);
         const response = await algodClient.sendRawTransaction(encodedTxnUint8Array).do();
 
 
@@ -286,19 +311,21 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
 
 
 
-        // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        // Return with UI widget support
+        const txnConfirm = {
+          type: 'usdc-optin' as const,
           txID: txn.txID(),
-          txnInfo: {
-            response,
-            type: 'usdc-optin',
-            address,
-            assetID: 31566704,
-            fee: 1000,
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          address,
+          assetID: 31566704,
+          fee: 1000,
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+          submitted: true,
+        };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -311,15 +338,21 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
   );
 
   // Transfer asset
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_txn_asset_transfer',
-    'Transfer an Algorand Standard Asset (ASA)',
     {
-      sender: z.string().describe('Sender address'),
-      receiver: z.string().describe('Receiver address'),
-      assetID: z.number().describe('Asset ID to transfer'),
-      amount: z.number().describe('Amount of asset to transfer'),
-      note: z.string().optional().describe('Optional transaction note')
+      description: 'Transfer an Algorand Standard Asset (ASA)',
+      inputSchema: {
+        sender: z.string().describe('Sender address'),
+        receiver: z.string().describe('Receiver address'),
+        assetID: z.number().describe('Asset ID to transfer'),
+        amount: z.number().describe('Amount of asset to transfer'),
+        note: z.string().optional().describe('Optional transaction note'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+      },
     },
     async ({ sender, receiver, assetID, amount, note }) => {
 
@@ -360,20 +393,22 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
         });
 
         // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        const txnConfirm = {
+          type: 'asset-transfer' as const,
           txID: txn.txID(),
           encodedTxn: Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64'),
-          txnInfo: {
-            type: 'asset-transfer',
-            sender: sender,
-            receiver: receiver,
-            assetID,
-            amount,
-            fee: Number(params.fee),
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          sender,
+          receiver,
+          assetID,
+          amount,
+          fee: Number(params.fee),
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+        };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{

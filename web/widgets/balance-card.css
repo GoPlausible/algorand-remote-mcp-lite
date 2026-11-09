@@ -1,0 +1,184 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: transparent;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.bal-card {
+  background: var(--color-background-primary, #ffffff);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: var(--border-radius-lg, 16px);
+  padding: 24px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Address header */
+.bal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bal-icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  display: flex; align-items: center; justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.bal-address-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.bal-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.bal-address-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.bal-address {
+  font-size: 12px;
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  letter-spacing: 0.3px;
+  color: var(--color-text-primary, #1a1a2e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bal-copy-inline {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--color-text-tertiary, #94a3b8);
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.bal-copy-inline:hover {
+  color: var(--color-text-secondary, #64748b);
+  background: var(--color-background-tertiary, #e2e8f0);
+}
+
+/* Balance display */
+.bal-balance-section {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border-radius: 12px;
+  padding: 20px;
+  color: white;
+  text-align: center;
+}
+
+.bal-balance-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+
+.bal-balance-value {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+  letter-spacing: -0.5px;
+}
+
+.bal-balance-unit {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.85;
+  margin-left: 6px;
+}
+
+/* Details rows */
+.bal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.bal-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-primary, #e2e8f0);
+}
+
+.bal-detail-row:last-child { border-bottom: none; }
+
+.bal-detail-label {
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+  font-weight: 500;
+}
+
+.bal-detail-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a2e);
+  font-family: var(--font-mono, "SF Mono", "Fira Code", monospace);
+}
+
+/* Loading */
+.bal-card.bal-loading {
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  gap: 14px;
+}
+
+.bal-loading-pulse {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  animation: bal-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes bal-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.bal-loading-text { font-size: 14px; color: var(--color-text-secondary, #64748b); }
+
+/* Error */
+.bal-card.bal-error {
+  align-items: center; justify-content: center;
+  min-height: 140px; gap: 12px;
+}
+
+.bal-error-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #fecaca; color: #dc2626;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 18px;
+}
+
+.bal-error-text { font-size: 14px; color: var(--color-text-secondary, #64748b); }
+
+/* Dark mode */
+[data-theme="dark"] .bal-error-icon { background: rgba(220, 38, 38, 0.2); color: #f87171; }

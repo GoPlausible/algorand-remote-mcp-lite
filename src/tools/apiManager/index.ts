@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Env, Props } from '../../types';
+import type { AssetsBinding } from '../../ui/widgetManager';
 import { registerAlgodApiTools } from './algod';
 import { registerIndexerApiTools } from './indexer';
 import { registerNfdApiTools } from './nfd';
@@ -15,18 +16,18 @@ import { registerHaystackRouterTools } from './hayrouter';
 /**
  * Register API tools to the MCP server
  */
-export function registerApiTools(server: McpServer,env: Env, props: Props): void {
-  // Register algod API tools
-  registerAlgodApiTools(server, env);
+export function registerApiTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+  // Register algod API tools (with widget UI for account info and asset info)
+  registerAlgodApiTools(server, env, assets);
 
-  // Register indexer API tools
-  registerIndexerApiTools(server, env);
+  // Register indexer API tools (with widget UI for transaction history)
+  registerIndexerApiTools(server, env, assets);
 
-  // Register NFD API tools
-  registerNfdApiTools(server, env);
+  // Register NFD API tools (with widget UI)
+  registerNfdApiTools(server, env, assets);
 
-  // Register Haystack Router tools
-  registerHaystackRouterTools(server, env, props);
+  // Register Haystack Router tools (with widget UI for swap quotes)
+  registerHaystackRouterTools(server, env, props, assets);
   
   // // Generic API request tool
   // server.tool(

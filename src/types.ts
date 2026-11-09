@@ -400,6 +400,11 @@ export interface State {
    * Number of items to show per page
    */
   items_per_page: number;
+
+  /**
+   * Whether the connected client supports MCP Apps UI
+   */
+  uiCapable?: boolean;
 }
 
 /**
@@ -407,6 +412,15 @@ export interface State {
  */
 export interface Env {
 
+  /**
+   * Durable Object binding required by agents McpAgent
+   */
+  MCP_OBJECT: DurableObjectNamespace<any>;
+
+  /**
+   * Static assets binding for MCP Apps UI widgets
+   */
+  ASSETS?: { fetch: (request: Request | string) => Promise<Response> };
 
   /**
    * Hashicorp Vault Worker binding for secure secret storage
@@ -494,6 +508,22 @@ export interface Env {
    * Items per page for pagination (default in state)
    */
   ITEMS_PER_PAGE?: string;
+
+  /**
+   * Alpha Arcade API base URL (default: https://platform.alphaarcade.com/api)
+   */
+  ALPHA_API_BASE_URL?: string;
+
+  /**
+   * Bazaar (x402 facilitator discovery directory) base URL
+   * (default: https://facilitator.goplausible.xyz)
+   */
+  BAZAAR_BASE_URL?: string;
+
+  /**
+   * Alpha Arcade API key for partner API access
+   */
+  ALPHA_API_KEY?: string;
 
   VERIFIED_ASSETS?: KVNamespace;
   ARC26_KV?: KVNamespace;

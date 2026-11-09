@@ -7,18 +7,16 @@ import * as algosdk from 'algosdk';
 
 
 import { z } from 'zod';
-import { ResponseProcessor } from '../../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  type Env, type Props, VaultResponse,
-} from '../../types';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
+import type { Env, Props } from '../../types';
+import { type AssetsBinding, registerWidget } from '../../ui/widgetManager';
 import {
   // getUserAddress,
   // ensureUserAccount,
   getPublicKey,
   signWithTransit
 } from '../../utils/vaultManager';
-import * as msgpack from "algo-msgpack-with-bigint"
 
 /**
  * Create and validate an Algorand client
@@ -43,24 +41,52 @@ function ConcatArrays(...arrs: ArrayLike<number>[]) {
 
   return c
 }
-function uint8ToBase64(uint8Array: Uint8Array): string {
-  let binary = '';
-  const len = uint8Array.length;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(uint8Array[i]);
-  }
-  const base64 = btoa(binary);
-  // convert to Base64URL (no padding)
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
+
 /**
  * Register general transaction management tools to the MCP server
  */
-export async function registerGeneralTransactionTools(server: McpServer, env: Env, props: Props): Promise<void> {
+export async function registerGeneralTransactionTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): Promise<void> {
   // Ensure user has a vault-based account
   if (!props.email || !props.provider) {
     throw new Error('Email and provider must be provided in props');
   }
+
+  // Register txn-confirm widget resource
+  const txnConfirmResourceUri = 'ui://txn/txn-confirm.html';
+  registerWidget(server, assets, {
+    name: 'txn-confirm-widget',
+    htmlPath: '/widgets/txn-confirm.html',
+    resourceUri: txnConfirmResourceUri,
+    description: 'Transaction confirmation UI widget',
+  });
+
+  // Register txn-receipt widget resource
+  const txnReceiptResourceUri = 'ui://txn/txn-receipt.html';
+  registerWidget(server, assets, {
+    name: 'txn-receipt-widget',
+    htmlPath: '/widgets/txn-receipt.html',
+    resourceUri: txnReceiptResourceUri,
+    description: 'Transaction receipt UI widget showing confirmed round, ID, date and transfer details',
+  });
+
+  // Register wallet-sign widget resource
+  const walletSignResourceUri = 'ui://txn/txn-sign-wallet.html';
+  registerWidget(server, assets, {
+    name: 'txn-sign-wallet-widget',
+    htmlPath: '/widgets/txn-sign-wallet.html',
+    resourceUri: walletSignResourceUri,
+    description: 'Vault wallet signing UI widget with signing animation and success checkmark',
+  });
+
+  // Register txn-submit widget resource
+  const txnSubmitResourceUri = 'ui://txn/txn-submit.html';
+  registerWidget(server, assets, {
+    name: 'txn-submit-widget',
+    htmlPath: '/widgets/txn-submit.html',
+    resourceUri: txnSubmitResourceUri,
+    description: 'Transaction submit UI widget with blockchain animation and confirmation details',
+  });
+
   // console.log(`Ensuring user account for ${props.email} with provider ${props.provider}`);
   // try {
   //   const accType = await ensureUserAccount(env, props.email, props.provider);
@@ -70,17 +96,23 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // }
 
   // Create payment transaction tool
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_txn_payment_transaction',
-    'Create a payment transaction on Algorand',
     {
-      sender: z.string().describe('Sender address'),
-      receiver: z.string().describe('Receiver address'),
-      amount: z.number().describe('Amount in microAlgos'),
-      fee: z.number().optional().describe('Transaction fee (in microAlgos)'),
-      note: z.string().optional().describe('Optional transaction note'),
-      closeRemainderTo: z.string().optional().describe('Optional close remainder to address'),
-      rekeyTo: z.string().optional().describe('Optional rekey to address')
+      description: 'Create a payment transaction on Algorand',
+      inputSchema: {
+        sender: z.string().describe('Sender address'),
+        receiver: z.string().describe('Receiver address'),
+        amount: z.number().describe('Amount in microAlgos'),
+        fee: z.number().optional().describe('Transaction fee (in microAlgos)'),
+        note: z.string().optional().describe('Optional transaction note'),
+        closeRemainderTo: z.string().optional().describe('Optional close remainder to address'),
+        rekeyTo: z.string().optional().describe('Optional rekey to address'),
+      },
+      _meta: {
+        ui: { resourceUri: txnConfirmResourceUri },
+      },
     },
     async ({ sender, receiver, amount, note, closeRemainderTo, rekeyTo, fee }) => {
 
@@ -121,18 +153,21 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         });
 
         // Return the encoded transaction
-        return ResponseProcessor.processResponse({
+        const txnConfirm = {
+          type: 'payment' as const,
           txID: txn.txID(),
           encodedTxn: Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64'),
-          txnInfo: {
-            sender: sender,
-            receiver: receiver,
-            amount,
-            fee: fee ? fee : Number(txn.fee),
-            firstValid: Number(params.firstValid),
-            lastValid: Number(params.lastValid)
-          }
-        });
+          sender,
+          receiver,
+          amount,
+          fee: fee ? fee : Number(txn.fee),
+          firstValid: Number(params.firstValid),
+          lastValid: Number(params.lastValid),
+        };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnConfirm, null, 2) }],
+          structuredContent: { txnConfirm },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -145,11 +180,17 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   );
 
   // Sign transaction with user's credentials
-  server.tool(
+  registerAppTool(
+    server,
     'wallet_sign_transaction',
-    'Sign an Algorand transaction with your agent account',
     {
-      encodedTxn: z.string().describe('Base64 encoded transaction')
+      description: 'Sign an Algorand transaction with your agent account',
+      inputSchema: {
+        encodedTxn: z.string().describe('Base64 encoded transaction')
+      },
+      _meta: {
+        ui: { resourceUri: walletSignResourceUri },
+      },
     },
     async ({ encodedTxn }) => {
       try {
@@ -194,52 +235,18 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         // Convert the base64 signature to Uint8Array
         const signature = Buffer.from(signatureResult.signature, 'base64');
         console.log('Signature:', signature);
-
-
-        // Convert the base64 public key to Uint8Array
-        const publicKeyBuffer = Buffer.from(publicKeyResult.publicKey, 'base64');
-        console.log('Public key buffer:', publicKeyBuffer);
-
-        // Get the address from the public key
-        const signerAddr = algosdk.encodeAddress(publicKeyBuffer);
-        console.log('Signer address:', signerAddr);
-        const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-        console.log('Transaction object for encoding:', txnObj);
-
-        // Create a Map for the signed transaction
-        const signedTxn: any = {
-          txn: txnObj,
-          sig: signature,
-        };
-        console.log('Signed transaction map:', signedTxn);
-
-        // Add AuthAddr if signing with a different key than From indicates
-        // Compare the actual bytes of the public keys, not their string representations
-        const fromPubKey = txn.sender.publicKey;
-        let keysMatch = fromPubKey.length === publicKeyBuffer.length;
-        if (keysMatch) {
-          for (let i = 0; i < fromPubKey.length; i++) {
-            if (fromPubKey[i] !== publicKeyBuffer[i]) {
-              keysMatch = false;
-              break;
-            }
-          }
-        }
-
-        if (!keysMatch) {
-          // Only add sgnr if the keys are actually different
-          signedTxn.sgnr = algosdk.decodeAddress(signerAddr).publicKey;
-        }
-
-        // Encode the signed transaction using MessagePack
-        const encodedSignedTxn: Uint8Array = new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true }))
+        // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+        const stxn = new algosdk.SignedTransaction({ txn, sig: new Uint8Array(signature) });
+        const encodedSignedTxn = algosdk.encodeMsgpack(stxn);
         console.log('Encoded signed transaction:', encodedSignedTxn);
         console.log('TXN ID:', txn.txID());
-        // Return the base64 encoded signed transaction
-        return ResponseProcessor.processResponse({
-          txID: txn.txID(),
-          signedTxn: Buffer.from(encodedSignedTxn).toString('base64')
-        });
+        // Return the base64 encoded signed transaction with structuredContent for widget and agent
+        const txID = txn.txID();
+        const signedTxnB64 = Buffer.from(encodedSignedTxn).toString('base64');
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ txID, signedTxn: signedTxnB64 }, null, 2) }],
+          structuredContent: { signResult: { txID, signedCount: 1, signerType: 'wallet' }, signedTxn: signedTxnB64 },
+        };
 
 
       } catch (error: any) {
@@ -362,10 +369,18 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
   // );
 
   // Submit signed transaction
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_submit_transaction',
-    'Submit a signed transaction to the Algorand network',
-    { signedTxn: z.string().describe('Base64 encoded signed transaction') },
+    {
+      description: 'Submit a signed transaction to the Algorand network',
+      inputSchema: {
+        signedTxn: z.string().describe('Base64 encoded signed transaction')
+      },
+      _meta: {
+        ui: { resourceUri: txnSubmitResourceUri },
+      },
+    },
     async ({ signedTxn }) => {
 
       if (!env.ALGORAND_ALGOD) {
@@ -385,22 +400,63 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         }
         console.log('Signed TXN:', signedTxn);
         // Decode and submit transaction
-        const decodedTxn = Buffer.from(signedTxn, 'base64');
-        console.log('Decoded signed transaction:', decodedTxn);
-        const response = await algodClient.sendRawTransaction(new Uint8Array(decodedTxn)).do();
+        const decodedTxnBytes = new Uint8Array(Buffer.from(signedTxn, 'base64'));
+        console.log('Decoded signed transaction:', decodedTxnBytes);
+        const response = await algodClient.sendRawTransaction(decodedTxnBytes).do();
         const txId = response.txid;
         console.log('Transaction ID:', txId);
         // Wait for confirmation
         const confirmedTxn = await algosdk.waitForConfirmation(algodClient, txId, 5);
         console.log('Confirmed transaction:', confirmedTxn);
 
+        // Extract txn details from signed bytes for receipt
+        let txnType = 'pay';
+        let sender = '';
+        let receiver: string | undefined;
+        let amount: number | undefined;
+        let assetID: number | undefined;
+        let fee = 1000;
+        try {
+          const decoded = algosdk.decodeSignedTransaction(decodedTxnBytes);
+          const txn = decoded.txn;
+          txnType = String(txn.type ?? 'pay');
+          sender = txn.sender?.toString() ?? '';
+          fee = Number(txn.fee ?? 1000);
+          if (txnType === 'pay') {
+            receiver = txn.payment?.receiver?.toString();
+            amount = Number(txn.payment?.amount ?? 0);
+          } else if (txnType === 'axfer') {
+            receiver = txn.assetTransfer?.receiver?.toString();
+            amount = Number(txn.assetTransfer?.amount ?? 0);
+            assetID = Number(txn.assetTransfer?.assetIndex ?? 0);
+          }
+        } catch (_e) {
+          // fields remain at defaults
+        }
 
-        return ResponseProcessor.processResponse({
-          confirmed: true,
+        const network = env.ALGORAND_ALGOD?.includes('mainnet') ? 'mainnet' : 'testnet';
+        const explorerUrl = network === 'mainnet'
+          ? `https://allo.info/tx/${txId}`
+          : `https://testnet.allo.info/tx/${txId}`;
+
+        const txnReceipt = {
           txID: txId,
           confirmedRound: Number(confirmedTxn.confirmedRound),
-          txnResult: confirmedTxn
-        });
+          date: new Date().toISOString(),
+          type: txnType,
+          sender,
+          receiver,
+          amount,
+          assetID,
+          fee,
+          network,
+          explorerUrl,
+        };
+
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(txnReceipt, null, 2) }],
+          structuredContent: { txnReceipt },
+        };
       } catch (error: any) {
         return {
           content: [{

@@ -1,0 +1,149 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: transparent;
+  color: var(--color-text-primary, #1a1a2e);
+}
+
+.ts-card {
+  background: var(--color-background-primary, #ffffff);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  border-radius: var(--border-radius-lg, 16px);
+  padding: 36px 24px 28px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/* Spinning icon ring */
+.ts-icon-ring {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  border-top-color: #0ea5e9;
+  border-right-color: rgba(14, 165, 233, 0.3);
+  border-bottom-color: rgba(14, 165, 233, 0.1);
+  border-left-color: rgba(14, 165, 233, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ts-icon-inner {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(14, 165, 233, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0ea5e9;
+}
+
+.ts-spin {
+  animation: ts-spin 1.4s linear infinite;
+}
+
+@keyframes ts-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Success check ring */
+.ts-check-ring {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(5, 150, 105, 0.35);
+  background: rgba(5, 150, 105, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ts-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ts-check-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #059669;
+}
+
+@keyframes ts-pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Text */
+.ts-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary, #1a1a2e);
+  line-height: 1.2;
+}
+
+.ts-subtitle {
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+  line-height: 1.4;
+}
+
+.ts-green { color: #059669; }
+.ts-red { color: #dc2626; }
+
+/* Animated dots */
+.ts-dots span {
+  animation: ts-blink 1.4s infinite;
+  opacity: 0;
+}
+.ts-dots span:nth-child(2) { animation-delay: 0.2s; }
+.ts-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes ts-blink {
+  0%, 80%, 100% { opacity: 0; }
+  40% { opacity: 1; }
+}
+
+/* Error */
+.ts-error-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #fecaca;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 22px;
+}
+
+/* Dark mode */
+[data-theme="dark"] .ts-icon-ring {
+  border-top-color: #38bdf8;
+  border-right-color: rgba(56, 189, 248, 0.3);
+  border-bottom-color: rgba(56, 189, 248, 0.1);
+  border-left-color: rgba(56, 189, 248, 0.3);
+}
+
+[data-theme="dark"] .ts-icon-inner { background: rgba(56, 189, 248, 0.1); color: #38bdf8; }
+
+[data-theme="dark"] .ts-check-ring {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.06);
+}
+
+[data-theme="dark"] .ts-check-inner { color: #34d399; }
+[data-theme="dark"] .ts-green { color: #34d399; }
+[data-theme="dark"] .ts-red { color: #f87171; }
+
+[data-theme="dark"] .ts-error-icon {
+  background: rgba(220, 38, 38, 0.2);
+  color: #f87171;
+}

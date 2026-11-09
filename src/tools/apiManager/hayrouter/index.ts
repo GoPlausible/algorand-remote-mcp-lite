@@ -5,16 +5,17 @@
 
 import { z } from 'zod';
 import * as algosdk from 'algosdk';
-import * as msgpack from 'algo-msgpack-with-bigint';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
-import { Env, Props } from '../../../types';
+import type { Env, Props } from '../../../types';
 import { getRouterClient } from './routerClient';
 import {
   getUserAddress,
   getPublicKey,
   signWithTransit
 } from '../../../utils/vaultManager';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
 function ConcatArrays(...arrs: ArrayLike<number>[]) {
   const size = arrs.reduce((sum, arr) => sum + arr.length, 0);
@@ -30,19 +31,42 @@ function ConcatArrays(...arrs: ArrayLike<number>[]) {
 /**
  * Register Haystack Router tools to the MCP server
  */
-export function registerHaystackRouterTools(server: McpServer, env: Env, props: Props): void {
+export function registerHaystackRouterTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+  // Register swap quote widget
+  const swapQuoteResourceUri = 'ui://swap/swap-quote-card.html';
+  registerWidget(server, assets, {
+    name: 'swap-quote-card-widget',
+    htmlPath: '/widgets/swap-quote-card.html',
+    resourceUri: swapQuoteResourceUri,
+    description: 'Interactive swap quote card UI widget',
+  });
+
+  // Register swap result widget
+  const swapResultResourceUri = 'ui://swap/swap-result-card.html';
+  registerWidget(server, assets, {
+    name: 'swap-result-card-widget',
+    htmlPath: '/widgets/swap-result-card.html',
+    resourceUri: swapResultResourceUri,
+    description: 'Swap execution result card UI widget',
+  });
+
   // Get swap quote
-  server.tool(
+  registerAppTool(server,
     'haystack_get_swap_quote',
-    'Get an optimized swap quote from Haystack Router — a DEX aggregator that finds the best swap route across multiple Algorand DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO). Returns the best-price quote with route details, USD values, and price impact. All amounts are in base units (e.g., 1000000 = 1 ALGO).',
     {
-      fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
-      type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type: fixed-input or fixed-output'),
-      address: z.string().optional().describe('User Algorand address (optional, needed for auto opt-in detection)'),
-      maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
-      maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops')
+      description: 'Get an optimized swap quote from Haystack Router — a DEX aggregator that finds the best swap route across multiple Algorand DEXes (Tinyman V2, Pact, Folks) and LST protocols (tALGO, xALGO). Returns the best-price quote with route details, USD values, and price impact. All amounts are in base units (e.g., 1000000 = 1 ALGO).',
+      inputSchema: {
+        fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
+        type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type: fixed-input or fixed-output'),
+        address: z.string().optional().describe('User Algorand address (optional, needed for auto opt-in detection)'),
+        maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
+        maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops')
+      },
+      _meta: {
+        ui: { resourceUri: swapQuoteResourceUri },
+      },
     },
     async ({ fromASAID, toASAID, amount, type, address, maxGroupSize, maxDepth }) => {
       try {
@@ -82,11 +106,27 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
           result.address = quote.address;
         }
 
-        return ResponseProcessor.processResponse(result);
+        // Sanitize result to ensure no BigInt values remain (route/flattenedRoute may contain them)
+        const safeResult = JSON.parse(JSON.stringify(result, (_k, v) =>
+          typeof v === 'bigint' ? (v >= Number.MIN_SAFE_INTEGER && v <= Number.MAX_SAFE_INTEGER ? Number(v) : v.toString()) : v
+        ));
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse(safeResult);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify(safeResult);
+        } catch {
+          textContent = JSON.stringify(safeResult);
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { swapQuote: safeResult },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Failed to get Haystack swap quote: ${error.message || 'Unknown error'}`
           }]
         };
@@ -95,18 +135,23 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
   );
 
   // Execute swap
-  server.tool(
+  registerAppTool(server,
     'haystack_execute_swap',
-    'Execute an optimized token swap via Haystack Router — gets the best route across multiple DEXes (Tinyman V2, Pact, Folks) and LST protocols, then signs with the vault wallet and submits. This is an all-in-one tool: quote → sign → submit → confirm. All amounts are in base units.',
     {
-      fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
-      amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
-      slippage: z.number().optional().default(1).describe('Slippage tolerance percentage (e.g., 1 = 1%)'),
-      type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type'),
-      note: z.string().optional().describe('Optional note to attach to the input transaction'),
-      maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
-      maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops')
+      description: 'Execute an optimized token swap via Haystack Router — gets the best route across multiple DEXes (Tinyman V2, Pact, Folks) and LST protocols, then signs with the vault wallet and submits. This is an all-in-one tool: quote → sign → submit → confirm. All amounts are in base units.',
+      inputSchema: {
+        fromASAID: z.number().int().describe('Input asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        toASAID: z.number().int().describe('Output asset ID (0 = ALGO, 31566704 = USDC, 312769 = USDt, etc.)'),
+        amount: z.number().int().describe('Amount in base units (e.g., 1000000 = 1 ALGO with 6 decimals)'),
+        slippage: z.number().optional().default(1).describe('Slippage tolerance percentage (e.g., 1 = 1%)'),
+        type: z.enum(['fixed-input', 'fixed-output']).default('fixed-input').describe('Quote type'),
+        note: z.string().optional().describe('Optional note to attach to the input transaction'),
+        maxGroupSize: z.number().int().optional().default(16).describe('Maximum transactions in atomic group'),
+        maxDepth: z.number().int().optional().default(4).describe('Maximum routing hops'),
+      },
+      _meta: {
+        ui: { resourceUri: swapResultResourceUri },
+      },
     },
     async ({ fromASAID, toASAID, amount, slippage, type, note, maxGroupSize, maxDepth }) => {
       if (!props.email || !props.provider) {
@@ -125,6 +170,7 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
           throw new Error('No active agent wallet configured');
         }
 
+        // Validate vault access before creating signer
         const publicKeyResult = await getPublicKey(env, props.email, props.provider);
         if (!publicKeyResult.success || !publicKeyResult.publicKey) {
           throw new Error('Failed to get public key from vault');
@@ -154,14 +200,9 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
 
             const signature = new Uint8Array(Buffer.from(signatureResult.signature, 'base64'));
 
-            // Construct signed transaction using msgpack
-            const txnObj = msgpack.decode(algosdk.encodeUnsignedTransaction(txn));
-            const signedTxn: any = {
-              txn: txnObj,
-              sig: signature,
-            };
-
-            results.push(new Uint8Array(msgpack.encode(signedTxn, { sortKeys: true, ignoreUndefined: true })));
+            // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
+            const stxn = new algosdk.SignedTransaction({ txn, sig: signature });
+            results.push(algosdk.encodeMsgpack(stxn));
           }
 
           return results;
@@ -238,7 +279,14 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
           response.inputTransactionId = inputTxnId;
         }
 
-        return ResponseProcessor.processResponse(response);
+        const swapResult = JSON.parse(JSON.stringify(response, (_k, v) =>
+          typeof v === 'bigint' ? v.toString() : v
+        ));
+        const textContent = JSON.stringify({ swapResult }, null, 2);
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: { swapResult },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -251,12 +299,14 @@ export function registerHaystackRouterTools(server: McpServer, env: Env, props: 
   );
 
   // Check opt-in status
-  server.tool(
+  server.registerTool(
     'haystack_needs_optin',
-    'Check if an Algorand address needs to opt into an asset before swapping. Returns true if opt-in is needed. Always returns false for ALGO (ASA 0).',
     {
-      address: z.string().describe('Algorand address to check'),
-      assetId: z.number().int().describe('Asset ID to check opt-in status for')
+      description: 'Check if an Algorand address needs to opt into an asset before swapping. Returns true if opt-in is needed. Always returns false for ALGO (ASA 0).',
+      inputSchema: {
+        address: z.string().describe('Algorand address to check'),
+        assetId: z.number().int().describe('Asset ID to check opt-in status for')
+      },
     },
     async ({ address, assetId }) => {
       try {

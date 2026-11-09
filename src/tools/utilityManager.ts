@@ -7,24 +7,56 @@ import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { skill } from '../utils/Skill.js';
+import { skilldemo } from '../utils/SkillDemo.js';
 import type { Env, Props } from '../types';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 
 /**
  * Register utility tools to the MCP server
  */
-export function registerUtilityTools(server: McpServer,env: Env, props: Props): void {
+export function registerUtilityTools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+
+  // Register address-validate widget
+  const addressValidateResourceUri = 'ui://utility/address-validate-card.html';
+  registerWidget(server, assets, {
+    name: 'address-validate-card-widget',
+    htmlPath: '/widgets/address-validate-card.html',
+    resourceUri: addressValidateResourceUri,
+    description: 'Address validation result widget with check/cross icon and copy button',
+  });
+
+  // Register app-address widget
+  const appAddressResourceUri = 'ui://utility/app-address-card.html';
+  registerWidget(server, assets, {
+    name: 'app-address-card-widget',
+    htmlPath: '/widgets/app-address-card.html',
+    resourceUri: appAddressResourceUri,
+    description: 'Application address card with app ID badge, address copy and explorer link',
+  });
+
   // Validate address
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_validate_address',
-    'Check if an Algorand address is valid',
-    { 
-      address: z.string().describe('Address in standard Algorand format (58 characters)') 
+    {
+      description: 'Check if an Algorand address is valid',
+      inputSchema: {
+        address: z.string().describe('Address in standard Algorand format (58 characters)')
+      },
+      _meta: {
+        ui: { resourceUri: addressValidateResourceUri },
+      },
     },
     async ({ address }) => {
       try {
         const isValid = algosdk.isValidAddress(address);
-        return ResponseProcessor.processResponse({ isValid });
+        const validationResult = { address, isValid };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(validationResult, null, 2) }],
+          structuredContent: { validationResult },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -37,11 +69,13 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Encode address
-  server.tool(
+  server.registerTool(
     'sdk_encode_address',
-    'Encode a public key to an Algorand address',
-    { 
-      publicKey: z.string().describe('Public key in hexadecimal format to encode into an address') 
+    {
+      description: 'Encode a public key to an Algorand address',
+      inputSchema: {
+        publicKey: z.string().describe('Public key in hexadecimal format to encode into an address')
+      },
     },
     async ({ publicKey }) => {
       try {
@@ -60,11 +94,13 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Decode address
-  server.tool(
+  server.registerTool(
     'sdk_decode_address',
-    'Decode an Algorand address to a public key',
-    { 
-      address: z.string().describe('Address in standard Algorand format (58 characters) to decode') 
+    {
+      description: 'Decode an Algorand address to a public key',
+      inputSchema: {
+        address: z.string().describe('Address in standard Algorand format (58 characters) to decode')
+      },
     },
     async ({ address }) => {
       try {
@@ -84,16 +120,30 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   );
   
   // Get application address
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_app_address_by_id',
-    'Get the address for a given application ID',
-    { 
-      appId: z.number().int().positive().describe('Application ID to get the address for') 
+    {
+      description: 'Get the address for a given application ID',
+      inputSchema: {
+        appId: z.number().int().positive().describe('Application ID to get the address for')
+      },
+      _meta: {
+        ui: { resourceUri: appAddressResourceUri },
+      },
     },
     async ({ appId }) => {
       try {
         const address = algosdk.getApplicationAddress(appId).toString();
-        return ResponseProcessor.processResponse({ address });
+        const network = env.ALGORAND_ALGOD?.includes('mainnet') ? 'mainnet' : 'testnet';
+        const explorerUrl = network === 'mainnet'
+          ? `https://allo.info/account/${address}`
+          : `https://testnet.allo.info/account/${address}`;
+        const appAddress = { appId, address, explorerUrl };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(appAddress, null, 2) }],
+          structuredContent: { appAddress },
+        };
       } catch (error: any) {
         return {
           content: [{
@@ -311,13 +361,32 @@ export function registerUtilityTools(server: McpServer,env: Env, props: Props): 
   // );
 
   // Get agent skill for Algorand Remote MCP
-  server.tool(
+  server.registerTool(
     'algorand_mcp_skill',
-    'Access comprehensive Algorand MCP skill including step-by-step workflows, examples, and best practices.',
-    {},
+    {
+      description: 'Access comprehensive Algorand Remote MCP Lite skill including step-by-step workflows, examples, and best practices.',
+    },
     async () => {
       try {
         return ResponseProcessor.processResponse(skill);
+      } catch (error: any) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Error getting agents skill: ${error.message || 'Unknown error'}`
+          }]
+        };
+      }
+    }
+  );
+  server.registerTool(
+    'algorand_demo_skill',
+    {
+      description: 'Instruction on how to use Algorand Remote MCP Lite edition (wallet edition) and give user a comprehensive, gamified demo of what Algorand and that MCP can do together',
+    },
+    async () => {
+      try {
+        return ResponseProcessor.processResponse(skilldemo);
       } catch (error: any) {
         return {
           content: [{

@@ -5,9 +5,10 @@
 
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
-import { ResponseProcessor } from '../utils';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
+import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 // import { en } from 'zod/v4/locales';
 
 /**
@@ -25,7 +26,15 @@ function createAlgoClient(algodUrl: string , token:string): algosdk.Algodv2 | nu
 /**
  * Register Algod tools to the MCP server
  */
-export function registerAlgodTools(server: McpServer,env: Env, props: Props): void {
+export function registerAlgodTools(server: McpServer, env: Env, _props: Props, assets?: AssetsBinding): void {
+  // Register raw txn submit widget
+  const rawTxnSubmitResourceUri = 'ui://algod/raw-txn-submit.html';
+  registerWidget(server, assets, {
+    name: 'raw-txn-submit-widget',
+    htmlPath: '/widgets/raw-txn-submit.html',
+    resourceUri: rawTxnSubmitResourceUri,
+    description: 'Raw transaction submission result widget with Tx ID and direct-to-algod explanation',
+  });
   // Compile TEAL code
   // server.tool(
   //   'sdk_compile_teal',
@@ -125,11 +134,17 @@ export function registerAlgodTools(server: McpServer,env: Env, props: Props): vo
   // );
   
   // Send raw transaction
-  server.tool(
+  registerAppTool(
+    server,
     'sdk_send_raw_transaction',
-    'Submit signed transactions to the Algorand network',
-    { 
-      signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+    {
+      description: 'Submit signed transactions to the Algorand network',
+      inputSchema: {
+        signedTxns: z.array(z.string()).describe('Array of base64-encoded signed transactions')
+      },
+      _meta: {
+        ui: { resourceUri: rawTxnSubmitResourceUri },
+      },
     },
     async ({ signedTxns }) => {
 
@@ -155,10 +170,11 @@ export function registerAlgodTools(server: McpServer,env: Env, props: Props): vo
         
         // Send transactions
         const response = await algodClient.sendRawTransaction(txnsBytes).do();
-        
-        return ResponseProcessor.processResponse({
-          txId: response.txid
-        });
+        const rawSubmitResult = { txId: response.txid };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(rawSubmitResult, null, 2) }],
+          structuredContent: { rawSubmitResult },
+        };
       } catch (error: any) {
         return {
           content: [{

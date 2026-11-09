@@ -6,8 +6,10 @@
 import * as algosdk from 'algosdk';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { ResponseProcessor } from '../../../utils';
 import type { Env } from '../../../types';
+import { type AssetsBinding, registerWidget } from '../../../ui/widgetManager';
 
 /**
  * Create and validate an Indexer client
@@ -24,7 +26,15 @@ function createIndexerClient(indexerUrl: string | undefined): algosdk.Indexer | 
 /**
  * Register indexer asset API tools to the MCP server
  */
-export function registerIndexerAssetTools(server: McpServer,env: Env): void {
+export function registerIndexerAssetTools(server: McpServer, env: Env, assets?: AssetsBinding): void {
+  // Register asset search indexer widget
+  const assetSearchIndexerResourceUri = 'ui://indexer/asset-search-indexer.html';
+  registerWidget(server, assets, {
+    name: 'asset-search-indexer-widget',
+    htmlPath: '/widgets/asset-search-indexer.html',
+    resourceUri: assetSearchIndexerResourceUri,
+    description: 'Asset search results table UI widget',
+  });
   // Lookup asset by ID
   // server.tool(
   //   'indexer_lookup_asset_by_id',
@@ -65,38 +75,53 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
   //   }
   // );
   
+  // Register asset holders widget
+  const assetHoldersResourceUri = 'ui://indexer/asset-holders.html';
+  registerWidget(server, assets, {
+    name: 'asset-holders-widget',
+    htmlPath: '/widgets/asset-holders.html',
+    resourceUri: assetHoldersResourceUri,
+    description: 'Asset holders table UI widget',
+  });
+
   // Lookup asset balances
-  server.tool(
+  registerAppTool(server,
     'indexer_lookup_asset_balances',
-    'Get accounts that hold a specific asset',
-    { 
-      assetId: z.number().int().describe('Asset ID'),
-      limit: z.number().int().optional().describe('Maximum number of accounts to return'),
-      currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
-      currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+    {
+      description: 'Get accounts that hold a specific asset',
+      inputSchema: {
+        assetId: z.number().int().describe('Asset ID'),
+        limit: z.number().int().optional().describe('Maximum number of accounts to return'),
+        currencyGreaterThan: z.number().int().optional().describe('Filter by minimum balance'),
+        currencyLessThan: z.number().int().optional().describe('Filter by maximum balance'),
+        nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: assetHoldersResourceUri },
+      },
     },
-    async ({ assetId, limit, currencyGreaterThan, currencyLessThan, nextToken }) => {
-      
+    async ({ assetId, limit, currencyGreaterThan, currencyLessThan, nextToken, pageToken }) => {
+
       if (!env.ALGORAND_INDEXER) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand indexer URL not configured'
           }]
         };
       }
-      
+
       try {
         // Create indexer client
         const indexerClient = createIndexerClient(env.ALGORAND_INDEXER);
         if (!indexerClient) {
           throw new Error('Failed to create Algorand indexer client');
         }
-        
+
         // Setup lookup with parameters
         let search = indexerClient.lookupAssetBalances(Number(assetId));
-        
+
         if (limit) {
           search = search.limit(Number(limit));
         }
@@ -109,15 +134,40 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
         if (nextToken) {
           search = search.nextToken(String(nextToken));
         }
-        
+
         // Execute lookup
         const response = await search.do();
-        
-        return ResponseProcessor.processResponse(response);
+        const balances = (response.balances || []).map((b: any) => ({
+          address: b.address,
+          amount: Number(b.amount ?? 0),
+          isFrozen: Boolean(b.isFrozen ?? b['is-frozen'] ?? false),
+          deleted: Boolean(b.deleted ?? false),
+          optedInAtRound: Number(b.optedInAtRound ?? b['opted-in-at-round'] ?? 0),
+        }));
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse({ balances }, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ assetId, holderCount: balances.length });
+        } catch {
+          textContent = JSON.stringify({ assetId, holderCount: balances.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: {
+            assetHolders: {
+              assetId,
+              balances,
+              totalHolders: balances.length,
+              'next-token': (response as any)['next-token'] || null,
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error looking up asset balances: ${error.message || 'Unknown error'}`
           }]
         };
@@ -126,37 +176,43 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
   );
   
   // Search for assets
-  server.tool(
+  registerAppTool(server,
     'indexer_search_for_assets',
-    'Search for assets with various criteria',
     {
-      name: z.string().optional().describe('Filter by asset name'),
-      unit: z.string().optional().describe('Filter by asset unit name'),
-      creator: z.string().optional().describe('Filter by creator address'),
-      limit: z.number().int().optional().describe('Maximum number of assets to return'),
-      nextToken: z.string().optional().describe('Token for retrieving the next page of results')
+      description: 'Search for assets with various criteria',
+      inputSchema: {
+        name: z.string().optional().describe('Filter by asset name'),
+        unit: z.string().optional().describe('Filter by asset unit name'),
+        creator: z.string().optional().describe('Filter by creator address'),
+        limit: z.number().int().optional().describe('Maximum number of assets to return'),
+        nextToken: z.string().optional().describe('Token for retrieving the next page of results'),
+        pageToken: z.string().optional().describe('Pagination token for paginated results')
+      },
+      _meta: {
+        ui: { resourceUri: assetSearchIndexerResourceUri },
+      },
     },
-    async ({ name, unit, creator, limit, nextToken }) => {
-      
+    async ({ name, unit, creator, limit, nextToken, pageToken }) => {
+
       if (!env.ALGORAND_INDEXER) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: 'Algorand indexer URL not configured'
           }]
         };
       }
-      
+
       try {
         // Create indexer client
         const indexerClient = createIndexerClient(env.ALGORAND_INDEXER);
         if (!indexerClient) {
           throw new Error('Failed to create Algorand indexer client');
         }
-        
+
         // Setup search with parameters
         let search = indexerClient.searchForAssets();
-        
+
         if (name) {
           search = search.name(String(name));
         }
@@ -172,15 +228,48 @@ export function registerIndexerAssetTools(server: McpServer,env: Env): void {
         if (nextToken) {
           search = search.nextToken(String(nextToken));
         }
-        
+
         // Execute search
         const response = await search.do();
-        
-        return ResponseProcessor.processResponse(response);
+        const assetsList = (response.assets || []).map((a: any) => {
+          const p = a.params || {};
+          return {
+            index: Number(a.index ?? 0),
+            params: {
+              name: p.name || undefined,
+              'unit-name': p.unitName ?? p['unit-name'] ?? undefined,
+              total: Number(p.total ?? 0),
+              decimals: Number(p.decimals ?? 0),
+              creator: p.creator || '',
+              'default-frozen': Boolean(p.defaultFrozen ?? p['default-frozen'] ?? false),
+              url: p.url || undefined,
+            },
+          };
+        });
+
+        let textContent: string;
+        try {
+          const textResponse = ResponseProcessor.processResponse({ assets: assetsList }, pageToken);
+          textContent = textResponse?.content?.[0]?.text ?? JSON.stringify({ assetCount: assetsList.length });
+        } catch {
+          textContent = JSON.stringify({ assetCount: assetsList.length });
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: textContent }],
+          structuredContent: {
+            assetSearch: {
+              assets: assetsList,
+              totalAssets: assetsList.length,
+              'next-token': (response as any)['next-token'] || null,
+              filters: { name, unit, creator },
+            }
+          },
+        };
       } catch (error: any) {
         return {
           content: [{
-            type: 'text',
+            type: 'text' as const,
             text: `Error searching assets: ${error.message || 'Unknown error'}`
           }]
         };

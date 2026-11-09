@@ -10,6 +10,13 @@
   "preview_urls": false,
   "compatibility_date": "2025-03-10",
   "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "npm run build:ui"
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS"
+  },
   "route": {
     "pattern": "algorandmcplite.goplausible.xyz/*",
     "zone_id": "592cbc5d1b3eec4db482306cbc966e1d"
@@ -86,7 +93,8 @@
     "PERA_WALLET_API_URL": "https://mainnet.api.perawallet.app/v1/public",
     "PERA_EXPLORER_URL": "https://explorer.perawallet.app",
     "ITEMS_PER_PAGE": "10",
-    "HCV_WORKER_URL": "https://hashicorp-vault-worker.emg110.workers.dev"
+    "HCV_WORKER_URL": "https://hashicorp-vault-worker.emg110.workers.dev",
+    "BAZAAR_BASE_URL": "https://facilitator.goplausible.xyz"
   }
   
   /* Secrets */
