@@ -47,6 +47,9 @@ function buildHTMLPage({
   const prettyLabel = label || "Algorand QRCode";
   const prettyAmount = amount && uriType !== 'Asset Transfer Request' ? `${amount / 1e6} Algo` : amount && uriType === 'Asset Transfer Request' ? amount : "No payment or transfer amount included!";
   const title = `${prettyLabel} from ${from}`;
+  // The URI is percent-encoded, so & is the only character in it HTML reads specially; written
+  // as it is, the '&not' of '&note=' would display as '¬e='.
+  const uriText = uri.replaceAll('&', '&amp;');
 
   return `
 <!DOCTYPE html>
@@ -140,7 +143,7 @@ function buildHTMLPage({
         />` : '<p>No QR code available</p>'}
     </div>
     
-    <div class="uri">${uri}</div>
+    <div class="uri">${uriText}</div>
     <h2>${prettyLabel}</h2>
     <img style="width:120px; height:40px;" src="https://goplausible.mypinata.cloud/ipfs/QmWjvCGPyL9zmA5B84WPqLYF27dL2nFgr1Lw6rMd7CpQPV/images/goPlausible-logo-type-h.png" alt="GoPlausible" />
     <div style="margin-top: 1rem; font-size: 0.5rem; color: #718096;">
@@ -300,23 +303,24 @@ export function registerArc90Tools(server: McpServer, env: Env, props: Props, as
   //   {
   //     address: z.string().describe('Algorand address (58 characters)'),
   //     label: z.string().optional().describe('Optional label for the address'),
-  //     amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
-  //     assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
-  //     note: z.string().optional().describe('Optional note')
+  //     amount: z.number().int().nonnegative().optional().describe("Amount as an integer in base units: microAlgos (for payment) or the asset's smallest unit (for asset transfer)"),
+  //     assetId: z.number().int().nonnegative().optional().describe('Asset ID (for asset transfer); omit or use 0 for Algo'),
+  //     note: z.string().optional().describe('Optional default note, which the wallet may let the user edit'),
+  //     xnote: z.string().optional().describe('Optional note the wallet must show but must not let the user edit'),
   //   },
-  //   async ({ address, label, amount, assetId, note }) => {
+  //   async ({ address, label, amount, assetId, note, xnote }) => {
   //     try {
-  //       const uri = generateAlgorandUri(address, label, amount, assetId, note);
-        
-  //       // Determine URI type
+  //       const uri = generateAlgorandUri(address, label, amount, assetId, note, xnote);
+
+  //       // Determine URI type (an assetId of 0 means Algo)
   //       let uriType = 'Account URI';
-  //       if (amount !== undefined && assetId !== undefined) {
+  //       if (amount !== undefined && assetId !== undefined && assetId !== 0) {
   //         uriType = 'Asset Transfer URI';
   //       } else if (amount !== undefined) {
   //         uriType = 'Payment URI';
   //       }
-        
-  //       return ResponseProcessor.processResponse({ 
+
+  //       return ResponseProcessor.processResponse({
   //         uri,
   //         uriType,
   //       });

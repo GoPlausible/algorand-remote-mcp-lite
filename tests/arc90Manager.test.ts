@@ -240,7 +240,8 @@ describe('ARC-90 URI Generation', () => {
       const uuid = JSON.parse(result.content[0].text).data.qrcode_link.split('/').pop();
       const page = store.get(`id--${uuid}`) as string;
       const uri = `algorand://${validAddress}?amount=1000000&note=%3Cscript%3Ealert%281%29%3C%2Fscript%3E%20%26%20more&xnote=ref%3D1`;
-      expect(page).toContain(uri);
+      // In HTML text & is written &amp;, or the '&not' of '&note=' would display as '¬e='
+      expect(page).toContain(`<div class="uri">${uri.replaceAll('&', '&amp;')}</div>`);
       expect(page).not.toContain('<script>');
       expect(result.structuredContent?.qrData).toMatchObject({ uri, xnote: 'ref=1' });
     });

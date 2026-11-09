@@ -224,5 +224,5 @@ Rich interactive widgets rendered inline by supported MCP clients (e.g., Claude 
 
 ## Notes
 
-- This server is configured for Algorand Mainnet by default; update `ALGORAND_NETWORK`, `ALGORAND_ALGOD`, and `ALGORAND_INDEXER` if you need to point elsewhere.
+- This server is configured for Algorand Mainnet by default; update `ALGORAND_NETWORK`, `ALGORAND_ALGOD`, and `ALGORAND_INDEXER` if you need to point elsewhere. `generate_algorand_qrcode` always emits MainNet URIs, though: ARC-90 leaves the network out for MainNet, so wallets read its QR codes as MainNet requests whatever network the server points at.
 - ARC-90 QR codes are intended for on-demand topups and user-friendly funding flows.

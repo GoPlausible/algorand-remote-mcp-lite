@@ -6,6 +6,7 @@ import {
   type McpUiHostContext,
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { esc } from "./alpha-escape";
 import "./qr-code.css";
 
 interface QrData {
@@ -72,14 +73,14 @@ function renderQrCard(data: QrData): string {
   const noteHtml = data.note
     ? `<div class="qr-detail-row">
         <span class="qr-detail-label">Note</span>
-        <span class="qr-detail-value qr-note">${data.note}</span>
+        <span class="qr-detail-value qr-note">${esc(data.note)}</span>
       </div>`
     : "";
 
   const xnoteHtml = data.xnote
     ? `<div class="qr-detail-row">
         <span class="qr-detail-label">Locked note</span>
-        <span class="qr-detail-value qr-note">${data.xnote}</span>
+        <span class="qr-detail-value qr-note">${esc(data.xnote)}</span>
       </div>`
     : "";
 

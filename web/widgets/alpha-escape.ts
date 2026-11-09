@@ -1,9 +1,10 @@
 /**
- * HTML escaping for the Alpha Arcade widgets.
+ * HTML escaping for the Alpha Arcade widgets and the QR code widget.
  *
  * Market data (titles, descriptions, categories, option names, images, ids) can come from
- * any Algorand application's on-chain state or from the Alpha API, so every value that is
- * interpolated into an innerHTML template must pass through esc(). esc() is safe in HTML
+ * any Algorand application's on-chain state or from the Alpha API, and the QR widget's note
+ * and xnote are free text from the tool call, so every such value that is interpolated into
+ * an innerHTML template must pass through esc(). esc() is safe in HTML
  * text and inside double- or single-quoted attribute values. It is not safe inside inline
  * event handlers, <script> or unquoted attributes; the widgets use none of those for data.
  */
