@@ -8,8 +8,25 @@ import {
   consumeConsent,
   createUpstreamState,
   isOAuthProvider,
+  OAUTH_PROVIDERS,
   type OAuthProviderName,
+  redirectUriProblem,
 } from "./utils/oauthFlow";
+
+/** Scopes requested from each upstream provider (shown on the consent page and sent upstream). */
+export const UPSTREAM_SCOPES: Record<OAuthProviderName, string> = {
+  google: "email profile",
+  github: "read:user user:email",
+  linkedin: "openid profile email",
+  twitter: "tweet.read users.read",
+};
+
+const PROVIDER_LABELS: Record<OAuthProviderName, string> = {
+  google: "Google",
+  github: "GitHub",
+  linkedin: "LinkedIn",
+  twitter: "X",
+};
 const COOKIE_NAME = "mcp-approved-clients";
 const ONE_YEAR_IN_SECONDS = 31536000;
 
@@ -240,6 +257,11 @@ export interface ApprovalDialogOptions {
    */
   setCookie: string;
   /**
+   * The validated authorization request: its scopes and the redirect URI the code will be sent
+   * to are shown to the user (MCP Security Best Practices, consent UI requirements).
+   */
+  authReqInfo: AuthRequest;
+  /**
    * Name of the cookie to use for storing approvals
    * @default "mcp_approved_clients"
    */
@@ -278,7 +300,10 @@ export interface ApprovalDialogOptions {
  * @returns A Response containing the HTML approval dialog
  */
 export function renderApprovalDialog(request: Request, options: ApprovalDialogOptions): Response {
-  const { client, server, consentToken, setCookie } = options;
+  const { client, server, consentToken, setCookie, authReqInfo } = options;
+  // Normalized form (international hostnames shown as punycode) so a look-alike host cannot
+  // pass for a familiar one; the URI was validated before the page is rendered.
+  const redirectTarget = new URL(authReqInfo.redirectUri);
   console.log("[WORKER_OAUTH_UTILS] Rendering approval dialog for client:", client?.clientId);
 
   // Sanitize any untrusted content
@@ -688,17 +713,23 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
       : ""
     }
               
-              ${redirectUris.length > 0
-      ? `
-                <div class="client-detail">
-                  <div class="detail-label">Redirect URIs:</div>
-                  <div class="detail-value small">
-                    ${redirectUris.map((uri) => `<div>${uri}</div>`).join("")}
-                  </div>
+              <div class="client-detail">
+                <div class="detail-label">Sends you back to:</div>
+                <div class="detail-value small">
+                  <strong>${sanitizeHtml(redirectTarget.host)}</strong>
+                  <div>${sanitizeHtml(redirectTarget.href)}</div>
                 </div>
-              `
-      : ""
+              </div>
+
+              <div class="client-detail">
+                <div class="detail-label">Requested scopes:</div>
+                <div class="detail-value small">
+                  ${authReqInfo.scope.length > 0
+      ? authReqInfo.scope.map((s) => `<div>${sanitizeHtml(s)}</div>`).join("")
+      : "None specified"
     }
+                </div>
+              </div>
               
               ${contacts
       ? `
@@ -711,8 +742,19 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
     }
             </div>
             
+            <p>If you continue, this client can use every tool on ${serverName}, including signing Algorand transactions with your wallet.</p>
+
+            <div class="client-info">
+              <div class="client-detail">
+                <div class="detail-label">Your sign-in provider shares:</div>
+                <div class="detail-value small">
+                  ${OAUTH_PROVIDERS.map((p) => `<div>${PROVIDER_LABELS[p]}: ${sanitizeHtml(UPSTREAM_SCOPES[p])}</div>`).join("")}
+                </div>
+              </div>
+            </div>
+
             <p>This MCP Client is requesting to be authorized on ${serverName}. Choose a provider to continue authentication:</p>
-            
+
             <form method="post" action="${new URL(request.url).pathname}" onsubmit="if(this.dataset.sent){return false;}this.dataset.sent='1';">
               <input type="hidden" name="consent_token" value="${sanitizeHtml(consentToken)}">
               <!-- Add a hidden field to store the provider preference in the approval form -->
@@ -902,7 +944,7 @@ export async function revokeUpstreamToken(
           client_secret: env.LINKEDIN_CLIENT_SECRET
         });
 
-        console.log(`[WORKER_OAUTH_UTILS] LinkedIn request params: ${params.toString()}`);
+        console.log("[WORKER_OAUTH_UTILS] Revoking LinkedIn token");
 
         const resp = await fetch("https://www.linkedin.com/oauth/v2/revoke", {
           method: "POST",
@@ -952,7 +994,7 @@ export async function redirectToProvider(
     case "github":
       console.log("[WORKER_OAUTH_UTILS] Redirecting to GitHub for OAuth authorization");
       clientIdParam = c.env.GITHUB_CLIENT_ID || '';
-      scope = "read:user user:email";
+      scope = UPSTREAM_SCOPES.github;
       upstreamUrl = "https://github.com/login/oauth/authorize";
       // Use a fixed redirect URI for GitHub that matches what's registered in the GitHub OAuth application settings
       redirectUri = new URL("/callback", c.req.raw.url).href;
@@ -960,7 +1002,7 @@ export async function redirectToProvider(
     case "twitter": {
       console.log("[WORKER_OAUTH_UTILS] Redirecting to Twitter for OAuth authorization");
       clientIdParam = c.env.TWITTER_CLIENT_ID || '';
-      scope = "tweet.read users.read";
+      scope = UPSTREAM_SCOPES.twitter;
       upstreamUrl = "https://x.com/i/oauth2/authorize";
       redirectUri = new URL("/callback", c.req.raw.url).href;
       redirectUriOverride =  (c.env.BASE_URL ? new URL("/callback", c.env.BASE_URL).href : undefined);
@@ -972,14 +1014,14 @@ export async function redirectToProvider(
     case "linkedin":
       console.log("[WORKER_OAUTH_UTILS] Redirecting to LinkedIn for OAuth authorization");
       clientIdParam = c.env.LINKEDIN_CLIENT_ID || '';
-      scope = "openid profile email";
+      scope = UPSTREAM_SCOPES.linkedin;
       upstreamUrl = "https://www.linkedin.com/oauth/v2/authorization";
       redirectUri = new URL("/callback", c.req.raw.url).href;
       break;
     case "google":
       console.log("[WORKER_OAUTH_UTILS] Redirecting to Google for OAuth authorization");
       clientIdParam = c.env.GOOGLE_CLIENT_ID || '';
-      scope = "email profile";
+      scope = UPSTREAM_SCOPES.google;
       upstreamUrl = "https://accounts.google.com/o/oauth2/v2/auth";
       hostedDomain = c.env.HOSTED_DOMAIN;
       redirectUri = new URL("/callback", c.req.raw.url).href;
@@ -1051,8 +1093,12 @@ export async function parseRedirectApproval(
   // The request was validated when the form was rendered; check again that the client and
   // its redirect URI are still registered (RFC 6749 §3.1.2.4).
   const client = await env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId);
-  if (!client || !client.redirectUris.includes(authReqInfo.redirectUri)) {
-    throw new Error("Client or redirect URI is no longer registered.");
+  if (
+    !client ||
+    !client.redirectUris.includes(authReqInfo.redirectUri) ||
+    redirectUriProblem(authReqInfo.redirectUri)
+  ) {
+    throw new Error("Client or redirect URI is no longer registered or no longer allowed.");
   }
 
   // Remembered approvals are parked: consent is asked on every authorization, as production has

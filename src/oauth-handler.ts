@@ -8,6 +8,8 @@ import {
 	clearFlowCookie,
 	consumeUpstreamState,
 	createConsent,
+	isOAuthProvider,
+	redirectUriProblem,
 	resolveRedirectUri,
 	stateCookieName,
 } from "./utils/oauthFlow";
@@ -41,8 +43,9 @@ const app = new Hono<{ Bindings: Env & OAuthEnv }>();
 
 /**
  * OAuth authorization request from an MCP client.
- * Validates the client and its redirect URI (RFC 6749 §3.1.2), then either redirects to the
- * provider the user already approved for this client, or renders the consent form.
+ * Validates the client, its redirect URI (RFC 6749 §3.1.2) and PKCE, then renders the consent
+ * form. Errors are shown as a 400 page and never redirected back to the client
+ * (RFC 9700 §4.11.2, MCP "Open Redirection"; decision 2026-11-09).
  */
 app.get("/authorize", async (c) => {
 	console.log("[OAUTH_HANDLER] Received OAuth authorization request");
@@ -65,10 +68,27 @@ app.get("/authorize", async (c) => {
 		return c.text("Unsupported response_type", 400);
 	}
 	const redirectUri = resolveRedirectUri(authReqInfo.redirectUri, client.redirectUris);
-	if (!redirectUri) {
+	// Also holds clients registered under older rules to the current redirect URI rules
+	if (!redirectUri || redirectUriProblem(redirectUri)) {
 		return c.text("Invalid redirect_uri", 400);
 	}
-	authReqInfo = { ...authReqInfo, redirectUri };
+	// PKCE is required for every client (OAuth 2.1 §4.1.2.1: public clients always; other clients
+	// unless code injection is mitigated another way, which this server has no other means for).
+	// Only S256 is accepted (decision 2026-11-10): RFC 7636 §4.2 makes it the mandatory method,
+	// RFC 9700 §2.1.1 calls it the only one that does not expose the verifier, and RFC 7636
+	// §4.4.1 allows refusing others. A missing method means "plain" (§4.3), so it is refused too.
+	if (!authReqInfo.codeChallenge) {
+		return c.text("Invalid request: code_challenge is required (PKCE)", 400);
+	}
+	if (authReqInfo.codeChallengeMethod !== "S256") {
+		return c.text("Invalid request: code_challenge_method must be S256", 400);
+	}
+	authReqInfo = {
+		...authReqInfo,
+		redirectUri,
+		// RFC 6749 §4.1.3: the token request must repeat redirect_uri if this request included it
+		redirectUriInRequest: authReqInfo.redirectUri !== "",
+	};
 	const clientId = authReqInfo.clientId;
 	console.log("[OAUTH_HANDLER] Validated OAuth request for Client ID:", clientId);
 
@@ -95,6 +115,7 @@ app.get("/authorize", async (c) => {
 
 		consentToken: consent.token,
 		setCookie: consent.setCookie,
+		authReqInfo,
 	});
 });
 
@@ -343,7 +364,11 @@ app.get("/callback", async (c) => {
 	// Check once more, right before issuing the code, that the redirect URI is still
 	// registered for this client (RFC 6749 §3.1.2.4)
 	const client = await c.env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId);
-	if (!client || !client.redirectUris.includes(authReqInfo.redirectUri)) {
+	if (
+		!client ||
+		!client.redirectUris.includes(authReqInfo.redirectUri) ||
+		redirectUriProblem(authReqInfo.redirectUri)
+	) {
 		return c.text("Invalid redirect_uri", 400);
 	}
 
@@ -373,104 +398,52 @@ app.get("/callback", async (c) => {
 });
 
 /**
- * Logout endpoint to clear cookies and revoke tokens
- * This endpoint is used to log out the user from the OAuth provider
+ * Logout: revokes the caller's own session.
+ * Requires the access token this server issued, as `Authorization: Bearer <token>` (RFC 6750).
+ * Revokes the upstream provider token kept in that session, then the grant and every token
+ * issued under it. Nothing is read from query parameters and nothing outside the caller's own
+ * grant is touched (client registrations are never deleted here).
  */
-app.all("/logout", async (c) => {
-	const url = new URL(c.req.raw.url);
-	const provider = url.searchParams.get("provider") || undefined;
-	const clientId = url.searchParams.get("clientId") || undefined;
-	const userId = url.searchParams.get("userId") || undefined;
-	const email = url.searchParams.get("email") || undefined;
-
-	if (!provider || !clientId || !email) {
-		return c.text("Missing provider, clientId or userId", 400);
+app.post("/logout", async (c) => {
+	// The auth scheme is case-insensitive (RFC 9110 §11.1)
+	const match = /^Bearer +(\S+)\s*$/i.exec(c.req.header("Authorization") || "");
+	if (!match) {
+		// RFC 6750 §3: no credentials presented, so no error code in the challenge
+		return new Response(null, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="OAuth"' } });
 	}
-	console.log("[OAUTH_HANDLER] Received logout request:", {
-		provider,
-		clientId,
-		userId,
-		email,
-	});
-	await c.env.OAUTH_KV.delete(`client:${clientId}`);
-	console.log("[OAUTH_HANDLER] Deleted client from OAUTH_KV:", clientId);
-	if (userId) {
-		const grantsList = await c.env.OAUTH_KV.list({ prefix: `grant:${userId}` });
-		console.log("[OAUTH_HANDLER] grants list:", grantsList);
-		if (grantsList.keys && grantsList.keys.length > 0) {
-			for (const key of grantsList.keys) {
-				console.log("[OAUTH_HANDLER] Deleting grant key:", key.name);
-				await c.env.OAUTH_KV.delete(key.name);
-			}
-			console.log("[OAUTH_HANDLER] All grants deleted for user:", userId);
-		}
-		// Delete all tokens for this user and client
-		const tokenList = await c.env.OAUTH_KV.list({ prefix: `token:${userId}` });
-		console.log("[OAUTH_HANDLER] token list:", tokenList);
-		if (tokenList.keys && tokenList.keys.length > 0) {
-			for (const key of tokenList.keys) {
-				console.log("[OAUTH_HANDLER] Deleting token key:", key.name);
-				await c.env.OAUTH_KV.delete(key.name);
-			}
-			console.log(
-				"[OAUTH_HANDLER] Deleted all tokens for user:",
-				userId,
-				"and client:",
-				clientId,
+	const session = await c.env.OAUTH_PROVIDER.unwrapToken(match[1]);
+	if (!session) {
+		return c.json(
+			{ error: "invalid_token", error_description: "The access token is invalid or expired" },
+			401,
+			{ "WWW-Authenticate": 'Bearer realm="OAuth", error="invalid_token"' },
+		);
+	}
+
+	// Revoke the upstream provider token kept in this session (best effort)
+	const provider = session.props?.provider;
+	const upstreamToken = session.props?.accessToken;
+	let upstreamRevoked = false;
+	if (isOAuthProvider(provider) && typeof upstreamToken === "string" && upstreamToken) {
+		try {
+			upstreamRevoked = await revokeUpstreamToken(provider, upstreamToken, c.env);
+		} catch (error) {
+			console.error(
+				"[OAUTH_HANDLER] Upstream token revocation error:",
+				error instanceof Error ? error.message : error,
 			);
 		}
 	}
 
-	// Try to get access token from Authorization header or query param for convenience.
-	const auth = c.req.header("authorization") || "";
-	const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : undefined;
-	const token = url.searchParams.get("token") || bearer || undefined;
+	// Revoke this session's grant and every token issued under it
+	await c.env.OAUTH_PROVIDER.revokeGrant(session.grantId, session.userId);
+	console.log(`[OAUTH_HANDLER] Logged out grant ${session.grantId} (upstream revoked: ${upstreamRevoked})`);
 
-	console.log("[OAUTH_HANDLER] Logout request details:", {
-		provider,
-		hasToken: !!token,
-		tokenType: token ? typeof token : "undefined",
-		tokenLength: token ? token.length : 0,
-		auth: !!auth,
-		bearer: !!bearer,
-	});
-
-	// Only attempt token revocation if we have both provider and token
-	if (provider && token) {
-		console.log("[OAUTH_HANDLER] About to call revokeUpstreamToken with:", {
-			provider,
-			tokenLength: token.length,
-		});
-
-		try {
-			const ok = await revokeUpstreamToken(provider, token, c.env);
-			console.log("[OAUTH_HANDLER] Upstream revocation result:", ok ? "ok" : "failed");
-		} catch (error) {
-			console.error("[OAUTH_HANDLER] Token revocation error:", error);
-		}
-	} else {
-		return c.text("No provider or no token specified", 400);
-	}
-
-	// Return a success response with all cookies cleared
-	return new Response(
-		JSON.stringify({
-			success: true,
-			message: "Successfully logged out",
-			forceReauthentication: true,
-		}),
-		{
-			status: 200,
-			headers: {
-				"Content-Type": "application/json",
-				// Clear OAuth-related cookies
-				"Set-Cookie": [
-					"mcp-approved-clients=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0",
-					"mcp-provider-preference=; Secure; Path=/; SameSite=Lax; Max-Age=0",
-				].join(", "),
-			},
-		},
-	);
+	const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+	// Clear the legacy remembered-approval cookies a browser may still hold
+	headers.append("Set-Cookie", "mcp-approved-clients=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0");
+	headers.append("Set-Cookie", "mcp-provider-preference=; Secure; Path=/; SameSite=Lax; Max-Age=0");
+	return new Response(JSON.stringify({ success: true, upstreamRevoked }), { status: 200, headers });
 });
 
 /**

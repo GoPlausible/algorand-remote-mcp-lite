@@ -94,6 +94,33 @@ function matchesCookie(
 	return fromCookie !== undefined && timingSafeEqual(submitted, fromCookie);
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Returns why a redirect URI is not acceptable, or null if it is. Applied at client
+ * registration and again whenever a redirect URI is used, so clients registered under older
+ * rules are held to the same standard.
+ * - RFC 6749 §3.1.2: an absolute URI without a fragment component.
+ * - MCP Authorization, Communication Security: "All redirect URIs MUST be either localhost or
+ *   use HTTPS". Private-use schemes (RFC 8252 §7.1) are deliberately not accepted (decision
+ *   2026-11-09), so only https:, or http: on a loopback host, pass.
+ * - No user information: "https://claude.ai@evil.example/" would read as claude.ai on the
+ *   consent page while sending the code to evil.example.
+ */
+export function redirectUriProblem(uri: string): string | null {
+	let url: URL;
+	try {
+		url = new URL(uri);
+	} catch {
+		return "must be an absolute URI";
+	}
+	if (uri.includes("#")) return "must not contain a fragment";
+	if (url.username || url.password) return "must not contain user information";
+	if (url.protocol === "https:") return null;
+	if (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)) return null;
+	return "must use https, or http on localhost, 127.0.0.1 or [::1]";
+}
+
 /**
  * RFC 6749 §3.1.2.3: the redirect URI must be one the client registered. It may be omitted
  * only when the client registered exactly one. Returns the URI to use, or null if invalid.

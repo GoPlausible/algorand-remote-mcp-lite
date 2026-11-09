@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { redirectUriProblem } from './utils/oauthFlow';
 
 // Types
 
@@ -281,6 +282,26 @@ export interface OAuthHelpers {
    * @returns A Promise resolving when the revocation is confirmed.
    */
   revokeGrant(grantId: string, userId: string): Promise<void>;
+
+  /**
+   * Validates an access token issued by this provider (same checks as API requests) and
+   * returns who it belongs to, with its decrypted props. Returns null for unknown, malformed
+   * or expired tokens.
+   * @param token - The access token string
+   */
+  unwrapToken(token: string): Promise<TokenSummary | null>;
+}
+
+/**
+ * Owner and props of a valid access token, as returned by OAuthHelpers.unwrapToken
+ */
+export interface TokenSummary {
+  userId: string;
+  grantId: string;
+  clientId: string;
+  scope: string[];
+  expiresAt: number;
+  props: any;
 }
 
 /**
@@ -321,6 +342,13 @@ export interface AuthRequest {
    * PKCE code challenge method (plain or S256)
    */
   codeChallengeMethod?: string;
+
+  /**
+   * Whether redirect_uri was present in the authorization request (rather than resolved from
+   * the client's single registered URI). When true, the token request must repeat the identical
+   * redirect_uri (RFC 6749 §4.1.3).
+   */
+  redirectUriInRequest?: boolean;
 }
 
 /**
@@ -519,6 +547,13 @@ export interface Grant {
    * Only present during the authorization code exchange process
    */
   codeChallengeMethod?: string;
+
+  /**
+   * redirect_uri of the authorization request, when it was included there; the token request
+   * must then repeat it identically (RFC 6749 §4.1.3).
+   * Only present during the authorization code exchange process
+   */
+  redirectUri?: string;
 }
 
 /**
@@ -867,7 +902,7 @@ class OAuthProviderImpl {
 
       let response: Response;
       if (parsed.isRevocationRequest) {
-        response = await this.handleRevocationRequest(parsed.body, env);
+        response = await this.handleRevocationRequest(parsed.body, parsed.clientInfo, env);
       } else {
         response = await this.handleTokenRequest(parsed.body, parsed.clientInfo, env);
       }
@@ -1187,12 +1222,13 @@ class OAuthProviderImpl {
       // not implemented: op_policy_uri
       // not implemented: op_tos_uri
       revocation_endpoint: tokenEndpoint, // Reusing token endpoint for revocation
-      // not implemented: revocation_endpoint_auth_methods_supported
+      // Revocation shares the token endpoint's client authentication
+      revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
       // not implemented: revocation_endpoint_auth_signing_alg_values_supported
       // not implemented: introspection_endpoint
       // not implemented: introspection_endpoint_auth_methods_supported
       // not implemented: introspection_endpoint_auth_signing_alg_values_supported
-      code_challenge_methods_supported: ['plain', 'S256'], // PKCE support
+      code_challenge_methods_supported: ['S256'], // PKCE: S256 only
     };
 
     return new Response(JSON.stringify(metadata), {
@@ -1270,6 +1306,24 @@ class OAuthProviderImpl {
       return this.createErrorResponse('invalid_grant', 'Client ID mismatch');
     }
 
+    // OAuth 2.1 §4.1.3: reject the token request if the authorization request had no
+    // code_challenge (the grant is not valid under this server's rules: RFC 6749 §5.2 invalid_grant)
+    if (!grantData.codeChallenge) {
+      return this.createErrorResponse('invalid_grant', 'Authorization code was issued without PKCE');
+    }
+
+    // RFC 6749 §4.1.3: when redirect_uri was included in the authorization request, the token
+    // request must include it and the two values must be identical. RFC 6749 §5.2: a missing
+    // required parameter is invalid_request, a mismatching redirect URI is invalid_grant.
+    if (grantData.redirectUri !== undefined) {
+      if (!redirectUri) {
+        return this.createErrorResponse('invalid_request', 'redirect_uri is required');
+      }
+      if (redirectUri !== grantData.redirectUri) {
+        return this.createErrorResponse('invalid_grant', 'redirect_uri does not match the authorization request');
+      }
+    }
+
     // Check if PKCE is being used
     const isPkceEnabled = !!grantData.codeChallenge;
 
@@ -1306,9 +1360,9 @@ class OAuthProviderImpl {
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         calculatedChallenge = base64UrlEncode(String.fromCharCode(...hashArray));
       } else {
-        console.log('[OAUTH_PROVIDER] Verifying PKCE code_verifier using plain method');
-        // Plain method, direct comparison
-        calculatedChallenge = codeVerifier;
+        // Only S256 is supported (decision 2026-11-10; RFC 9700 §2.1.1: S256 is the only method
+        // that does not expose the verifier). Never fall back to plain.
+        return this.createErrorResponse('invalid_grant', 'Unsupported PKCE code_challenge_method');
       }
 
       if (calculatedChallenge !== grantData.codeChallenge) {
@@ -1414,6 +1468,7 @@ class OAuthProviderImpl {
     grantData.authCodeId = undefined;
     grantData.codeChallenge = undefined;
     grantData.codeChallengeMethod = undefined;
+    grantData.redirectUri = undefined;
     grantData.authCodeWrappedKey = undefined;
     grantData.refreshTokenId = refreshTokenId;
     grantData.refreshTokenWrappedKey = refreshTokenWrappedKey;
@@ -1676,19 +1731,22 @@ class OAuthProviderImpl {
    * @param env - Cloudflare Worker environment variables
    * @returns Response confirming revocation or error
    */
-  private async handleRevocationRequest(body: any, env: any): Promise<Response> {
+  private async handleRevocationRequest(body: any, clientInfo: ClientInfo, env: any): Promise<Response> {
     // Handle the revocation request
-    return this.revokeToken(body, env);
+    return this.revokeToken(body, clientInfo, env);
   }
 
   /**
    * - Access tokens: Revokes only the specific token
    * - Refresh tokens: Revokes the entire grant (access + refresh tokens)
+   * RFC 7009 §2.1: only the client the token was issued to may revoke it; §2.2: respond 200
+   * when the token was revoked or is invalid.
    * @param body - The parsed request body containing token parameter
+   * @param clientInfo - The authenticated client making the request
    * @param env - Cloudflare Worker environment variables
    * @returns Response confirming revocation or error
    */
-  private async revokeToken(body: any, env: any): Promise<Response> {
+  private async revokeToken(body: any, clientInfo: ClientInfo, env: any): Promise<Response> {
     const token = body.token;
 
     if (!token) {
@@ -1696,21 +1754,36 @@ class OAuthProviderImpl {
     }
     const tokenParts = token.split(':');
     if (tokenParts.length !== 3) {
-      return new Response('', { status: 200 });
+      return new Response(null, { status: 200 });
     }
 
     const [userId, grantId, _] = tokenParts;
     const tokenId = await generateTokenId(token);
 
     const isAccessToken = await this.validateAccessToken(tokenId, userId, grantId, env);
-    const isRefreshToken = await this.validateRefreshToken(tokenId, userId, grantId, env);
+    const isRefreshToken = !isAccessToken && (await this.validateRefreshToken(tokenId, userId, grantId, env));
 
-    if (isAccessToken) {
-      await this.revokeSpecificAccessToken(tokenId, userId, grantId, env);
-    } else if (isRefreshToken) {
-      await this.createOAuthHelpers(env).revokeGrant(grantId, userId);
+    if (isAccessToken || isRefreshToken) {
+      // The owning client: from the access token record, or from the grant for a refresh token
+      const ownerClientId: string | undefined = isAccessToken
+        ? ((await env.OAUTH_KV.get(`token:${userId}:${grantId}:${tokenId}`, { type: 'json' })) as Token | null)?.grant
+            .clientId
+        : ((await env.OAUTH_KV.get(`grant:${userId}:${grantId}`, { type: 'json' })) as Grant | null)?.clientId;
+      if (ownerClientId === undefined) {
+        // Removed in the meantime: nothing left to revoke (RFC 7009 §2.2)
+        return new Response(null, { status: 200 });
+      }
+      if (ownerClientId !== clientInfo.clientId) {
+        // RFC 6749 §5.2 invalid_grant covers a grant "issued to another client"
+        return this.createErrorResponse('invalid_grant', 'Token was not issued to this client');
+      }
+      if (isAccessToken) {
+        await this.revokeSpecificAccessToken(tokenId, userId, grantId, env);
+      } else {
+        await this.createOAuthHelpers(env).revokeGrant(grantId, userId);
+      }
     }
-    return new Response('', { status: 500 });
+    return new Response(null, { status: 200 });
   }
 
   /**
@@ -1858,6 +1931,12 @@ class OAuthProviderImpl {
       const redirectUris = validateStringArray(clientMetadata.redirect_uris);
       if (!redirectUris || redirectUris.length === 0) {
         throw new Error('At least one redirect URI is required');
+      }
+      for (const uri of redirectUris) {
+        const problem = redirectUriProblem(uri);
+        if (problem) {
+          return this.createErrorResponse('invalid_redirect_uri', `Invalid redirect URI: ${problem}`);
+        }
       }
 
       clientInfo = {
@@ -2498,6 +2577,8 @@ class OAuthHelpersImpl implements OAuthHelpers {
       // Store PKCE parameters if provided
       codeChallenge: options.request.codeChallenge,
       codeChallengeMethod: options.request.codeChallengeMethod,
+      // Bind the redirect URI to the code when the authorization request included it (RFC 6749 §4.1.3)
+      redirectUri: options.request.redirectUriInRequest ? options.request.redirectUri : undefined,
     };
 
     // Store the grant with a key that includes the user ID
@@ -2506,7 +2587,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
     // Set 10-minute TTL for the grant (will be extended when code is exchanged)
     const codeExpiresIn = 600; // 10 minutes
     await this.env.OAUTH_KV.put(grantKey, JSON.stringify(grant), { expirationTtl: codeExpiresIn });
-    console.log('[OAUTH_PROVIDER] Stored grant with auth code:', grant);
+    console.log('[OAUTH_PROVIDER] Stored grant with auth code:', grantId, 'for client', grant.clientId);
 
     // Build the redirect URL for authorization code flow
     const redirectUrl = new URL(options.request.redirectUri);
@@ -2517,7 +2598,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
       console.log('[OAUTH_PROVIDER] Adding client ID to redirect URL:', options.request.clientId);
       redirectUrl.searchParams.set('client', options.request.clientId);
     }
-    console.log('[OAUTH_PROVIDER] Redirect URL:', redirectUrl.toString());
+    console.log('[OAUTH_PROVIDER] Redirecting to client callback:', redirectUrl.origin + redirectUrl.pathname);
     return { redirectTo: redirectUrl.toString() };
   }
 
@@ -2777,6 +2858,37 @@ class OAuthHelpersImpl implements OAuthHelpers {
 
     // After all tokens are deleted, delete the grant itself
     await this.env.OAUTH_KV.delete(grantKey);
+  }
+
+  /**
+   * Validates an access token with the same checks as API requests (format, stored record,
+   * expiry) and returns its owner and decrypted props, or null if it is not a valid token.
+   * @param token - The access token string
+   */
+  async unwrapToken(token: string): Promise<TokenSummary | null> {
+    const parts = token.split(':');
+    if (parts.length !== 3) return null;
+    const [userId, grantId] = parts;
+
+    const tokenId = await generateTokenId(token);
+    const tokenData: Token | null = await this.env.OAUTH_KV.get(`token:${userId}:${grantId}:${tokenId}`, {
+      type: 'json',
+    });
+    if (!tokenData) return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    if (tokenData.expiresAt < now) return null;
+
+    const encryptionKey = await unwrapKeyWithToken(token, tokenData.wrappedEncryptionKey);
+    const props = await decryptProps(encryptionKey, tokenData.grant.encryptedProps);
+    return {
+      userId: tokenData.userId,
+      grantId: tokenData.grantId,
+      clientId: tokenData.grant.clientId,
+      scope: tokenData.grant.scope,
+      expiresAt: tokenData.expiresAt,
+      props,
+    };
   }
 }
 

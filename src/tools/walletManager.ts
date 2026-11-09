@@ -447,6 +447,9 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
   );
 
   // Logout from OAuth provider
+  // NOTE: POST /logout now requires the MCP access token issued by this server as
+  // `Authorization: Bearer <token>` and ignores query parameters; this parked tool must be
+  // reworked accordingly before it is re-enabled (props.accessToken is the upstream token).
   // server.tool(
   //   'wallet_logout',
   //   'Logout from the OAuth provider and clear authentication cookies',

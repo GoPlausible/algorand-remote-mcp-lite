@@ -249,14 +249,54 @@ describe('GET /authorize', () => {
     expect(env.CODE_VERIFIER_KV.store.size).toBe(0);
   });
 
-  it('uses the single registered redirect URI when none is given', async () => {
+  it('requires PKCE with S256 only', async () => {
     const { env } = makeEnv();
+    const noChallenge = new URL(authorizeUrl());
+    noChallenge.searchParams.delete('code_challenge');
+    expect((await request(env, noChallenge.toString())).status).toBe(400);
+    expect((await request(env, authorizeUrl({ code_challenge_method: 'S512' }))).status).toBe(400);
+    expect((await request(env, authorizeUrl({ code_challenge_method: 'plain' }))).status).toBe(400);
+    // A missing method means "plain" (RFC 7636 §4.3), so it is refused as well
+    const noMethod = new URL(authorizeUrl());
+    noMethod.searchParams.delete('code_challenge_method');
+    expect((await request(env, noMethod.toString())).status).toBe(400);
+    expect(env.CODE_VERIFIER_KV.store.size).toBe(0);
+
+    expect((await request(env, authorizeUrl({ code_challenge_method: 'S256' }))).status).toBe(200);
+  });
+
+  it('records whether redirect_uri was in the request, and uses the single registered one when absent', async () => {
+    const { env } = makeEnv();
+    await request(env, authorizeUrl());
     const url = new URL(authorizeUrl());
     url.searchParams.delete('redirect_uri');
     const res = await request(env, url.toString());
     expect(res.status).toBe(200);
     const stored = [...env.CODE_VERIFIER_KV.store.values()].map((v) => JSON.parse(v));
-    expect(stored[0].redirectUri).toBe(REDIRECT);
+    expect(stored.map((s) => [s.redirectUri, s.redirectUriInRequest])).toEqual([
+      [REDIRECT, true],
+      [REDIRECT, false],
+    ]);
+  });
+
+  it('shows the requested scopes, the redirect target and what each provider shares', async () => {
+    const { env } = makeEnv();
+    const html = await (await request(env, authorizeUrl({ scope: 'wallet:read <b>x</b>' }))).text();
+    expect(html).toContain('Sends you back to:');
+    expect(html).toContain(REDIRECT);
+    expect(html).toContain('Requested scopes:');
+    expect(html).toContain('Your sign-in provider shares:');
+    expect(html).toContain('<div>wallet:read</div>');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(html).not.toContain('<b>x</b>');
+    expect(html).toContain('Google: email profile');
+    expect(html).toContain('GitHub: read:user user:email');
+    expect(html).toContain('LinkedIn: openid profile email');
+    expect(html).toContain('X: tweet.read users.read');
+    expect(html).toContain('including signing Algorand transactions with your wallet');
+
+    const none = await (await request(env, authorizeUrl())).text();
+    expect(none).toContain('None specified');
   });
 
   it('asks for consent again even after an earlier approval in the same browser', async () => {
