@@ -526,7 +526,7 @@ export interface Env {
   ALPHA_API_KEY?: string;
 
   VERIFIED_ASSETS?: KVNamespace;
-  ARC26_KV?: KVNamespace;
+  ARC90_KV?: KVNamespace;
   OAUTH_KV?: KVNamespace;
   HCV_WORKER_URL?: string; // Hashicorp Vault Worker binding for secure secret storage
 

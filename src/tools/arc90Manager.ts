@@ -1,7 +1,10 @@
 /**
- * ARC-26 Manager for Algorand Remote MCP
- * Handles Algorand URI generation following ARC-26 specification
- * https://github.com/algorandfoundation/ARCs/blob/main/ARCs/arc-0026.md
+ * ARC-90 Manager for Algorand Remote MCP Lite
+ * Generates Algorand payment URIs, and QR codes of them, following the ARC-90 URI scheme, which
+ * supersedes ARC-26: https://github.com/algorandfoundation/ARCs/blob/main/ARCs/arc-0090.md
+ *
+ * This server runs on MainNet, the canonical network, so the URIs it emits carry no network
+ * authority: ARC-90 requires emitters that target the canonical network to omit it.
  */
 import { PhotonImage, resize, watermark, SamplingFilter } from "@cf-wasm/photon";
 import { z } from 'zod';
@@ -11,6 +14,12 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import type { Env, Props } from '../types';
 import { type AssetsBinding, registerWidget } from '../ui/widgetManager';
 import { generate } from '@juit/qrcode'
+
+// QR pages and images are served by goplausible.xyz from the ARC90_KV namespace; changing this
+// path needs the matching route on goplausible.xyz.
+const QR_PAGE_BASE_URL = 'https://goplausible.xyz/api/arc90';
+
+const ALGORAND_ADDRESS = /^[A-Z2-7]{58}$/;
 
 function buildHTMLPage({
   provider,
@@ -49,7 +58,7 @@ function buildHTMLPage({
   <meta name="robots" content="index, follow">
   <meta name="author" property="og:author" content="did:algo:UTI7PAAS...R5PWSZ4I">
   <meta itemprop="name" content="Algorand Agent ${label2} from ${from}">
-  <meta itemprop="description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-26 URI.">
+  <meta itemprop="description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-90 URI.">
   <meta itemprop="image" content="${qrPng}" type="image/jpeg">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no" />
   <meta name="description" content="${label2}" />
@@ -58,15 +67,15 @@ function buildHTMLPage({
   <meta name="twitter:site" content="@goplausible_ai">
   <meta name="twitter:creator" content="@GoPlausible">
   <meta name="twitter:title" content="Algorand Agent  ${label2} from ${from}">
-  <meta name="twitter:description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-26 URI.">
+  <meta name="twitter:description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-90 URI.">
   <meta name="twitter:image" content="${qrPng}" type="image/jpeg">
   <!-- Open Graph data -->
   <meta property="og:image" content="${qrPng}" type="image/jpeg""/>
   <meta property="og:domain" content="goplausible.xyz" />
-  <meta property="og:url" content="https://goplausible.xyz/api/arc26/${uuid}" />
+  <meta property="og:url" content="${QR_PAGE_BASE_URL}/${uuid}" />
   <meta property="og:title" content="Algorand Agent ${label2} from ${from}"/>
   <meta property="og:type" content="website" />
-  <meta property="og:description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-26 URI." />
+  <meta property="og:description" content="${label2} for ${prettyAmount} to this Algorand address via ARC-90 URI." />
 
   <style>
     body {
@@ -145,97 +154,91 @@ function buildHTMLPage({
 </html>
   `.trim();
 }
-function generateAlgorandUri(
+/**
+ * Percent-encode a text value for an ARC-90 query parameter. ARC-90 requires every character
+ * outside the RFC 3986 unreserved set (ALPHA / DIGIT / "-" / "." / "_" / "~") to be UTF-8 encoded
+ * and then percent-encoded. encodeURIComponent leaves ! ' ( ) * unencoded, so those are encoded
+ * here.
+ */
+export function encodeArc90QueryValue(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/**
+ * Build an ARC-90 payment URI: algorand://<address>[?label=&amount=&asset=&note=&xnote=].
+ * amount is in base units (microAlgos, or the asset's smallest unit) and ARC-90 allows only
+ * non-negative integers. An assetId of 0 means Algo, for which ARC-90 says to omit the asset
+ * parameter. note is a default the wallet may let the user edit; xnote must not be editable.
+ */
+export function generateAlgorandUri(
   address: string,
   label?: string,
   amount?: number,
   assetId?: number,
-  note?: string
+  note?: string,
+  xnote?: string,
 ): string {
-  // Validate address format (58 characters)
-  if (!/^[A-Z2-7]{58}$/.test(address)) {
+  if (!ALGORAND_ADDRESS.test(address)) {
     throw new Error('Invalid Algorand address format');
   }
 
-  // Build the base URI
-  let uri = `algorand://${address}`;
-
-  // Build query parameters
   const queryParams: string[] = [];
 
-  // Add optional label
   if (label) {
-    queryParams.push(`label=${encodeURIComponent(label)}`);
+    queryParams.push(`label=${encodeArc90QueryValue(label)}`);
   }
 
-  // Add optional amount
   if (amount !== undefined) {
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new Error(
+        "Amount must be a non-negative integer in base units (microAlgos, or the asset's smallest unit)",
+      );
+    }
     queryParams.push(`amount=${amount}`);
   }
 
-  // Add optional assetId
   if (assetId !== undefined) {
-    queryParams.push(`asset=${assetId}`);
+    if (!Number.isSafeInteger(assetId) || assetId < 0) {
+      throw new Error('Asset ID must be a non-negative integer');
+    }
+    if (assetId !== 0) {
+      queryParams.push(`asset=${assetId}`);
+    }
   }
 
-  // Add optional note
   if (note) {
-    queryParams.push(`note=${encodeURIComponent(note)}`);
+    queryParams.push(`note=${encodeArc90QueryValue(note)}`);
   }
 
-  // Append query string if we have parameters
-  if (queryParams.length > 0) {
-    uri += `?${queryParams.join('&')}`;
+  if (xnote) {
+    queryParams.push(`xnote=${encodeArc90QueryValue(xnote)}`);
   }
 
-  return uri;
+  const uri = `algorand://${address}`;
+  return queryParams.length > 0 ? `${uri}?${queryParams.join('&')}` : uri;
+}
+// URI type reported by the generate_algorand_qrcode tool (an assetId of 0 means Algo)
+export function determineQrUriType(amount?: number, assetId?: number): string {
+  let uriType = 'Account Contact';
+  if (amount !== undefined && amount !== 0 && assetId !== undefined && assetId !== 0) {
+    uriType = 'Asset Transfer Request';
+  } else if (amount !== undefined) {
+    uriType = 'Payment Request';
+  }
+  return uriType;
 }
 async function generateAlgorandQr(params: any): Promise<{ uri: string; qrCode: string }> {
-  // Validate address format (base32 string)
-  if (!params.address || !/^[A-Z2-7]{58}$/.test(params.address)) {
-    throw new Error('Invalid Algorand address format');
-  }
-
-  // Start building the URI with the scheme and address
-  let uri = `algorand://${params.address}`;
-
-  // Build query parameters
-  const queryParams: string[] = [];
-
-  // Add optional parameters if provided
-  if (params.label) {
-    queryParams.push(`label=${params.label}`);
-  }
-
-  if (typeof params.amount === 'number') {
-    if (params.amount < 0) {
-      throw new Error('Amount must be non-negative');
-    }
-    // Convert to microAlgos and ensure no decimals
-    const microAlgos = Math.floor(params.amount);
-    queryParams.push(`amount=${microAlgos}`);
-  }
-
-  if (typeof params.asset === 'number') {
-    if (params.asset < 0) {
-      throw new Error('Asset ID must be non-negative');
-    }
-    queryParams.push(`asset=${params.asset}`);
-  }
-
-  if (params.note) {
-    queryParams.push(`note=${params.note}`);
-  }
-
-  // if (params.xnote) {
-  //   queryParams.push(`xnote=${encodeURIComponent(params.xnote)}`);
-  // }
-
-  // Add query parameters to URI if any exist
-  if (queryParams.length > 0) {
-    uri += `?${queryParams.join('&')}`;
-  }
-
+  const uri = generateAlgorandUri(
+    params.address,
+    params.label,
+    params.amount,
+    params.asset,
+    params.note,
+    params.xnote,
+  );
 
   console.log('Generated URI:', uri);
   const pngBuffer = await generate(uri, 'png', {
@@ -287,13 +290,13 @@ async function generateAlgorandQr(params: any): Promise<{ uri: string; qrCode: s
 }
 
 /**
- * Register ARC-26 tools to the MCP server
+ * Register ARC-90 tools to the MCP server
  */
-export function registerArc26Tools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
+export function registerArc90Tools(server: McpServer, env: Env, props: Props, assets?: AssetsBinding): void {
   // Generate Algorand URI
   // server.tool(
   //   'generate_algorand_uri',
-  //   'Generate a URI following the Algorand ARC-26 specification to send account address or request payment or asset transfer',
+  //   'Generate an Algorand payment URI following the ARC-90 URI scheme (which supersedes ARC-26) to share an account address or request a payment or asset transfer on MainNet',
   //   {
   //     address: z.string().describe('Algorand address (58 characters)'),
   //     label: z.string().optional().describe('Optional label for the address'),
@@ -328,7 +331,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
   //   }
   // );
   // Register QR code widget
-  const qrCodeResourceUri = 'ui://arc26/qr-code.html';
+  const qrCodeResourceUri = 'ui://arc90/qr-code.html';
   registerWidget(server, assets, {
     name: 'qr-code-widget',
     htmlPath: '/widgets/qr-code.html',
@@ -341,58 +344,55 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
     server,
     'generate_algorand_qrcode',
     {
-      description: 'Generate a URI and QRCode of it, following the Algorand ARC-26 specification to send account address or request payment or asset transfer',
+      description: 'Generate an Algorand payment URI following the ARC-90 URI scheme (which supersedes ARC-26) and a QR code of it, on a page valid for 1 day, to share an account address or request a payment or asset transfer on MainNet',
       inputSchema: {
         address: z.string().describe('Algorand address (58 characters)'),
-        amount: z.number().optional().describe('Amount in microAlgos (for payment) or asset units (for asset transfer)'),
+        amount: z.number().int().nonnegative().optional().describe("Amount as an integer in base units: microAlgos (for payment) or the asset's smallest unit (for asset transfer)"),
         decimals: z.number().optional().describe('The decimals of the asset (integer number like 6 for USDC or Algo)'),
-        assetId: z.number().optional().describe('Asset ID (for asset transfer)'),
-        note: z.string().optional().describe('Optional note')
+        assetId: z.number().int().nonnegative().optional().describe('Asset ID (for asset transfer); omit or use 0 for Algo'),
+        note: z.string().optional().describe('Optional default note, which the wallet may let the user edit'),
+        xnote: z.string().optional().describe('Optional note the wallet must show but must not let the user edit'),
       },
       _meta: {
         ui: { resourceUri: qrCodeResourceUri },
       },
     },
-    async ({ address, amount, decimals, assetId, note }) => {
+    async ({ address, amount, decimals, assetId, note, xnote }) => {
       try {
         const toolArgs: any = {
           address,
           amount,
           asset: assetId,
-          note
+          note,
+          xnote,
         };
-        console.log('Generating ARC-26 QR with args:', toolArgs);
+        console.log('Generating ARC-90 QR with args:', toolArgs);
         const { uri, qrCode } = await generateAlgorandQr(toolArgs);
-        console.log('Generated ARC-26 URI:', uri);
+        console.log('Generated ARC-90 URI:', uri);
         // Determine URI type
-        let uriType = 'Account Contact';
-        if (amount !== undefined && amount !== 0 && assetId !== undefined) {
-          uriType = 'Asset Transfer Request';
-        } else if (amount !== undefined) {
-          uriType = 'Payment Request';
-        }
+        const uriType = determineQrUriType(amount, assetId);
 
         const uuid = crypto.randomUUID().replaceAll('-', '');
 
-        await env.ARC26_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 });// cache one day
+        await env.ARC90_KV?.put(`image--${uuid}`, qrCode, { expirationTtl: 86400 });// cache one day
 
         const htmlPage = buildHTMLPage({
           provider: props.provider,
           uri,
           uriType,
           uuid,
-          qrPng: `https://goplausible.xyz/api/arc26/image/${uuid}.jpeg`,
+          qrPng: `${QR_PAGE_BASE_URL}/image/${uuid}.jpeg`,
           from: props.email,
           label: `Algorand ${props.provider === 'twitter'? 'X' : props.provider === 'google'? 'Google' : props.provider === 'linkedin'? 'Linkedin': props.provider === 'github'? 'GitHub': props.provider === 'algorand'? 'Agency':''} Agent`,
           label2: `${uriType}`,
           amount
         });
-        await env.ARC26_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 });// cache one day
+        await env.ARC90_KV?.put(`id--${uuid}`, htmlPage, { expirationTtl: 86400 });// cache one day
 
-        const qrCodeLink = `https://goplausible.xyz/api/arc26/${uuid}`;
+        const qrCodeLink = `${QR_PAGE_BASE_URL}/${uuid}`;
 
         const textResponse = ResponseProcessor.processResponse({
-          label: "Algorand ARC-26 QR Code link (valid for 1 day)",
+          label: "Algorand ARC-90 QR Code link (valid for 1 day)",
           qrcode_link: qrCodeLink,
         });
 
@@ -408,6 +408,7 @@ export function registerArc26Tools(server: McpServer, env: Env, props: Props, as
               amount,
               assetId,
               note,
+              xnote,
               decimals,
             }
           },

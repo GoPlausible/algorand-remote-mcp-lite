@@ -17,6 +17,7 @@ interface QrData {
   amount?: number;
   assetId?: number;
   note?: string;
+  xnote?: string;
   decimals?: number;
 }
 
@@ -75,12 +76,19 @@ function renderQrCard(data: QrData): string {
       </div>`
     : "";
 
+  const xnoteHtml = data.xnote
+    ? `<div class="qr-detail-row">
+        <span class="qr-detail-label">Locked note</span>
+        <span class="qr-detail-value qr-note">${data.xnote}</span>
+      </div>`
+    : "";
+
   const qrImageSection = data.qrImageData
     ? `<div class="qr-image-section">
         <img
           class="qr-image"
           src="data:image/jpeg;base64,${data.qrImageData}"
-          alt="ARC-26 QR Code"
+          alt="ARC-90 QR Code"
           loading="eager"
         />
       </div>`
@@ -142,8 +150,9 @@ function renderQrCard(data: QrData): string {
         ${amountHtml}
         ${assetHtml}
         ${noteHtml}
+        ${xnoteHtml}
         <div class="qr-detail-row">
-          <span class="qr-detail-label">ARC-26 URI</span>
+          <span class="qr-detail-label">ARC-90 URI</span>
           <span class="qr-detail-value qr-uri-inline" title="${data.uri}">${data.uri.slice(0, 32)}…</span>
           <button class="qr-copy-inline" data-copy="${data.uri}" title="Copy URI">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

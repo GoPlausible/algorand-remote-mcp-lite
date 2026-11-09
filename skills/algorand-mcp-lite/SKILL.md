@@ -4,7 +4,7 @@ description: >
   Comprehensive guide for interacting with Algorand blockchain via Algorand Remote MCP Lite (Wallet Edition) —
   a managed MCP server with 59 tools for wallet operations, ALGO/ASA transactions, atomic groups, account queries,
   NFD lookups, Haystack Router DEX-aggregated swaps, Alpha Arcade prediction markets, Pera asset verification,
-  ARC-26 QR codes, transaction receipts, AP2 payment mandates, and rich structured-data UI widgets.
+  ARC-90 payment URIs and QR codes, transaction receipts, AP2 payment mandates, and rich structured-data UI widgets.
   Use this skill whenever working with Algorand Remote MCP Lite tools, building agents that interact with Algorand
   via MCP, querying Algorand accounts/assets/transactions, sending payments, swapping tokens, trading prediction
   markets, generating payment QR codes or receipts, or managing an MCP-based Algorand wallet. Also use when the
@@ -290,24 +290,25 @@ Slippage is verified on the **final output** of the swap, not on individual hops
 | `alpha_claim` | Claim USDC from a resolved market |
 | `alpha_propose_match` | Propose match between compatible orders |
 
-### 12. ARC-26 URI & QR Code (1 tool)
+### 12. ARC-90 URI & QR Code (1 tool)
 
 | Tool | Purpose |
 |------|---------|
-| `generate_algorand_qrcode` | Generate ARC-26 Algorand URI and QR code for payment/transfer |
+| `generate_algorand_qrcode` | Generate an ARC-90 payment URI (ARC-90 supersedes ARC-26) and a page with its QR code (valid 1 day) |
 
 **Parameters:**
 ```
 {
   address: "[wallet_address]",
-  amount: 5000000,          // Required amount including MBR and fees
-  asset: 31566704,          // Optional: ASA ID for token top-ups
-  note: "Fund account"
+  amount: 5000000,          // Integer in base units: microAlgos, or the ASA's smallest unit
+  assetId: 31566704,        // Optional: ASA ID for token top-ups (omit for Algo)
+  note: "Fund account",     // Optional: default note the wallet may let the user edit
+  xnote: "Order 42"         // Optional: note the wallet must not let the user edit
 }
-→ Returns: URI string + UTF-8 text QR code
+→ Returns: a link to a page with the ARC-90 URI and its QR code (valid for 1 day)
 ```
 
-When displaying QR codes, paste the UTF-8 QR block inside a code block and show the URI string below it.
+UI-capable clients show the QR widget. Otherwise share the returned link: the page shows the QR code and the ARC-90 URI.
 
 ### 13. Transaction Receipts (1 tool)
 
@@ -487,11 +488,11 @@ General asset opt-in:
 ```
 generate_algorand_qrcode {
   address: "[wallet_address]",
-  amount: 5000000,          // Required amount including MBR and fees
-  asset: 31566704,          // Optional: ASA ID for token top-ups
+  amount: 5000000,          // Integer in base units: microAlgos, or the ASA's smallest unit
+  assetId: 31566704,        // Optional: ASA ID for token top-ups (omit for Algo)
   note: "Fund account"
 }
-→ Returns URI string + UTF-8 QR code — user scans with Pera Wallet
+→ Returns a link to a page with the ARC-90 URI and its QR code (valid for 1 day) — user scans it with their wallet
 ```
 
 ---

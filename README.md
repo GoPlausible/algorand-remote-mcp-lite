@@ -11,7 +11,7 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 - OAuth 2.0 with PKCE and OIDC-compatible social login (Google, GitHub, Twitter/X, LinkedIn) for user identity.
 - HashiCorp Vault transit signing via the `HCV_WORKER` service; private keys never leave the vault.
 - Algod + Indexer APIs for on-chain state and transaction submission.
-- KV namespaces for OAuth sessions, vault entity mapping, verified assets, ARC-26 QR/receipt caching, and AP2 storage.
+- KV namespaces for OAuth sessions, vault entity mapping, verified assets, ARC-90 QR/receipt caching, and AP2 storage.
 
 ## Design
 
@@ -30,7 +30,7 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 ## Features
 
 - Agentic wallet operations: balance, assets, signing, and submission without exposing secrets.
-- On-demand topup using Algorand ARC-26 QR codes (`generate_algorand_qrcode`).
+- On-demand topup using Algorand ARC-90 payment QR codes (`generate_algorand_qrcode`).
 - AP2 mandate generation for intent, cart, and payment flows (`generate_ap2_mandate`).
 - Receipt generation with QR codes for payments and asset transfers (`generate_algorand_receipt`).
 - Atomic transaction groups and asset workflows (opt-in, transfer, USDC opt-in).
@@ -124,8 +124,8 @@ Algorand Remote MCP Lite is a wallet-first Model Context Protocol server for Alg
 ### Blockchain Stats (1)
 - `api_get_algorand_weather`: Get Algorand chain weather/stats (TPS, block time, health)
 
-### ARC-26 (1)
-- `generate_algorand_qrcode`: Generate an ARC-26 URI and QR code for payment or asset transfer requests
+### ARC-90 (1)
+- `generate_algorand_qrcode`: Generate an ARC-90 payment URI (ARC-90 supersedes ARC-26) and a page with its QR code for payment or asset transfer requests (link valid for 1 day)
 
 ### Receipts (1)
 - `generate_algorand_receipt`: Generate a transaction receipt with QR code for payments or asset transfers
@@ -205,7 +205,7 @@ Rich interactive widgets rendered inline by supported MCP clients (e.g., Claude 
 - `alpha-shares-action-widget` (`ui://alpha/shares-action.html`): Shares action result
 
 #### Other (4)
-- `qr-code-widget` (`ui://arc26/qr-code.html`): Interactive QR code display
+- `qr-code-widget` (`ui://arc90/qr-code.html`): Interactive QR code display
 - `receipt-card-widget` (`ui://receipt/receipt-card.html`): Interactive transaction receipt
 - `mandate-card-widget` (`ui://ap2/mandate-card.html`): Interactive AP2 mandate card
 - `chain-weather-widget` (`ui://stats/chain-weather.html`): Animated chain weather dashboard showing Algorand network conditions
@@ -225,4 +225,4 @@ Rich interactive widgets rendered inline by supported MCP clients (e.g., Claude 
 ## Notes
 
 - This server is configured for Algorand Mainnet by default; update `ALGORAND_NETWORK`, `ALGORAND_ALGOD`, and `ALGORAND_INDEXER` if you need to point elsewhere.
-- ARC-26 QR codes are intended for on-demand topups and user-friendly funding flows.
+- ARC-90 QR codes are intended for on-demand topups and user-friendly funding flows.

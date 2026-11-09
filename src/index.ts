@@ -17,7 +17,7 @@ import {
 	registerGroupTransactionTools,
 	registerUtilityTools,
 	registerAlgodTools,
-	registerArc26Tools,
+	registerArc90Tools,
 	registerReceiptTools,
 	registerApiTools,
 	// registerKnowledgeTools,
@@ -94,7 +94,7 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		await this.registerWalletTools();
 		await this.registerAp2Tools();
 		// this.registerKnowledgeTools();
-		this.registerArc26Tools();
+		this.registerArc90Tools();
 		this.registerReceiptTools();
 		this.registerAlgodTools();
 		this.registerApiTools();
@@ -167,17 +167,17 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 	}
 
 	/**
-	 * Register ARC-26 URI generation tools
+	 * Register ARC-90 URI generation tools
 	 */
-	private registerArc26Tools() {
-		// Register ARC-26 URI generation tools
-		registerArc26Tools(this.server, this.env, this.props!, this.env.ASSETS);
+	private registerArc90Tools() {
+		// Register ARC-90 URI generation tools
+		registerArc90Tools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 	/**
 	 * Register Receipt URI generation tools
 	 */
 	private registerReceiptTools() {
-		// Register ARC-26 URI generation tools
+		// Register receipt tools
 		registerReceiptTools(this.server, this.env, this.props!, this.env.ASSETS);
 	}
 
