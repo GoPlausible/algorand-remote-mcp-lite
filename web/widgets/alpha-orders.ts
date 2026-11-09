@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import "./alpha-common.css";
+import { esc } from "./alpha-escape";
 
 interface OrderEntry {
   escrowAppId: number;
@@ -61,14 +62,14 @@ function renderOrderRow(o: OrderEntry): string {
     : `<span class="aa-badge aa-badge-sell">SELL</span>`;
 
   return `
-    <div class="aa-row" data-escrow="${o.escrowAppId}" style="cursor:pointer">
+    <div class="aa-row" data-escrow="${esc(o.escrowAppId)}" style="cursor:pointer">
       <div class="aa-row-info">
-        <div class="aa-row-title">Escrow ${o.escrowAppId} <button class="aa-copy-inline" data-copy="${o.escrowAppId}" title="Copy">${COPY_SVG}</button></div>
-        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${o.quantity} &middot; Filled: ${o.filled}</span></div>
+        <div class="aa-row-title">Escrow ${esc(o.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(o.escrowAppId)}" title="Copy">${COPY_SVG}</button></div>
+        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${esc(o.quantity)} &middot; Filled: ${esc(o.filled)}</span></div>
       </div>
       <div class="aa-row-right">
-        <span class="aa-row-price">${o.price}</span>
-        <span class="aa-row-vol">Remaining: ${o.remaining}</span>
+        <span class="aa-row-price">${esc(o.price)}</span>
+        <span class="aa-row-vol">Remaining: ${esc(o.remaining)}</span>
       </div>
     </div>`;
 }
@@ -121,11 +122,11 @@ function renderOrders(data: OrdersStructuredContent["ordersData"]): string {
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Open Orders</div>
-          <div class="aa-subtitle">Market ${data.marketAppId} &middot; ${truncAddr(data.walletAddress)} &middot; ${data.orders.length} order${data.orders.length !== 1 ? "s" : ""}</div>
+          <div class="aa-subtitle">Market ${esc(data.marketAppId)} &middot; ${esc(truncAddr(data.walletAddress))} &middot; ${esc(data.orders.length)} order${data.orders.length !== 1 ? "s" : ""}</div>
         </div>
       </div>
       <div class="list-controls">
-        <input type="text" class="list-filter-input" id="aa-orders-filter" placeholder="Filter orders..." value="${filterQuery}">
+        <input type="text" class="list-filter-input" id="aa-orders-filter" placeholder="Filter orders..." value="${esc(filterQuery)}">
         <select class="list-sort-select" id="aa-orders-side">
           <option value="">All sides</option>
           <option value="buy">Buy only</option>
@@ -165,7 +166,7 @@ function renderOrderDetail(o: OrderEntry): string {
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Order Detail</div>
-          <div class="aa-subtitle">Escrow ${o.escrowAppId} ${posBadge}${sideBadge}</div>
+          <div class="aa-subtitle">Escrow ${esc(o.escrowAppId)} ${posBadge}${sideBadge}</div>
         </div>
       </div>
 
@@ -178,31 +179,31 @@ function renderOrderDetail(o: OrderEntry): string {
       <div style="margin-top:8px">
         <div class="aa-detail-row">
           <span class="aa-detail-label">Escrow App ID</span>
-          <span class="aa-detail-value">${o.escrowAppId} <button class="aa-copy-inline" data-copy="${o.escrowAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(o.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(o.escrowAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Position</span>
-          <span class="aa-detail-value">${o.position}</span>
+          <span class="aa-detail-value">${esc(o.position)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Side</span>
-          <span class="aa-detail-value">${o.side}</span>
+          <span class="aa-detail-value">${esc(o.side)}</span>
         </div>
         <div class="aa-detail-row" id="aa-od-price-row">
           <span class="aa-detail-label">Price</span>
-          <span class="aa-detail-value">${o.price}</span>
+          <span class="aa-detail-value">${esc(o.price)}</span>
         </div>
         <div class="aa-detail-row" id="aa-od-qty-row">
           <span class="aa-detail-label">Quantity</span>
-          <span class="aa-detail-value">${o.quantity}</span>
+          <span class="aa-detail-value">${esc(o.quantity)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Filled</span>
-          <span class="aa-detail-value">${o.filled}</span>
+          <span class="aa-detail-value">${esc(o.filled)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Remaining</span>
-          <span class="aa-detail-value">${o.remaining}</span>
+          <span class="aa-detail-value">${esc(o.remaining)}</span>
         </div>
       </div>
 
@@ -252,7 +253,7 @@ function showEditMode() {
     priceRow.innerHTML = `
       <span class="aa-detail-label">Price</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-edit-price" value="${priceVal.toFixed(2)}" step="0.01" min="0.01" max="0.99">
+        <input type="number" class="aa-edit-input" id="aa-edit-price" value="${esc(priceVal.toFixed(2))}" step="0.01" min="0.01" max="0.99">
       </span>`;
   }
   const qtyRow = root.querySelector("#aa-od-qty-row");
@@ -260,7 +261,7 @@ function showEditMode() {
     qtyRow.innerHTML = `
       <span class="aa-detail-label">Quantity</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-edit-qty" value="${qtyVal.toFixed(2)}" step="0.1" min="0.1">
+        <input type="number" class="aa-edit-input" id="aa-edit-qty" value="${esc(qtyVal.toFixed(2))}" step="0.1" min="0.1">
       </span>`;
   }
   const actionArea = root.querySelector("#aa-order-action-area");
@@ -283,11 +284,11 @@ function cancelEditMode() {
   const o = selectedOrder;
   const priceRow = root.querySelector("#aa-od-price-row");
   if (priceRow) {
-    priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${o.price}</span>`;
+    priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${esc(o.price)}</span>`;
   }
   const qtyRow = root.querySelector("#aa-od-qty-row");
   if (qtyRow) {
-    qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${o.quantity}</span>`;
+    qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${esc(o.quantity)}</span>`;
   }
   const actionArea = root.querySelector("#aa-order-action-area");
   if (actionArea) actionArea.innerHTML = "";
@@ -320,11 +321,11 @@ async function confirmAmendOrder() {
       | { text?: string }
       | undefined;
     if (actionArea)
-      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order amended successfully!"}</div>`;
+      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order amended successfully!")}</div>`;
     isEditing = false;
   } catch (err: any) {
     if (actionArea)
-      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to amend order"}</div>`;
+      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to amend order")}</div>`;
   }
 }
 
@@ -350,10 +351,10 @@ async function cancelOrder() {
       | { text?: string }
       | undefined;
     if (actionArea)
-      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order cancelled!"}</div>`;
+      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order cancelled!")}</div>`;
   } catch (err: any) {
     if (actionArea)
-      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to cancel order"}</div>`;
+      actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to cancel order")}</div>`;
     if (cancelBtn) cancelBtn.disabled = false;
   }
 }
@@ -381,7 +382,7 @@ function renderLoading(): string {
 }
 
 function renderError(msg: string): string {
-  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;

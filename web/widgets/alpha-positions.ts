@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import "./alpha-common.css";
+import { esc } from "./alpha-escape";
 
 interface PositionEntry {
   marketAppId: number;
@@ -44,16 +45,16 @@ function renderPositionRow(p: PositionEntry): string {
   return `
     <div class="aa-row">
       <div class="aa-row-info">
-        <div class="aa-row-title">${p.title}</div>
+        <div class="aa-row-title">${esc(p.title)}</div>
         <div class="aa-row-sub">
-          <span style="font-size:10px">App ${p.marketAppId}</span>
-          <button class="aa-copy-inline" data-copy="${p.marketAppId}" title="Copy App ID">${COPY_SVG}</button>
+          <span style="font-size:10px">App ${esc(p.marketAppId)}</span>
+          <button class="aa-copy-inline" data-copy="${esc(p.marketAppId)}" title="Copy App ID">${COPY_SVG}</button>
         </div>
       </div>
       <div class="aa-row-right">
         <div class="aa-row-badges">
-          <span class="aa-badge aa-badge-yes">YES ${p.yesBalance}</span>
-          <span class="aa-badge aa-badge-no">NO ${p.noBalance}</span>
+          <span class="aa-badge aa-badge-yes">YES ${esc(p.yesBalance)}</span>
+          <span class="aa-badge aa-badge-no">NO ${esc(p.noBalance)}</span>
         </div>
       </div>
     </div>`;
@@ -98,11 +99,11 @@ function renderPositions(data: PositionsStructuredContent["positionsData"]): str
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Positions</div>
-          <div class="aa-subtitle">${truncAddr(data.walletAddress)} &middot; ${data.positions.length} position${data.positions.length !== 1 ? "s" : ""}</div>
+          <div class="aa-subtitle">${esc(truncAddr(data.walletAddress))} &middot; ${esc(data.positions.length)} position${data.positions.length !== 1 ? "s" : ""}</div>
         </div>
       </div>
       <div class="list-controls">
-        <input type="text" class="list-filter-input" id="aa-pos-filter" placeholder="Search positions..." value="${filterQuery}">
+        <input type="text" class="list-filter-input" id="aa-pos-filter" placeholder="Search positions..." value="${esc(filterQuery)}">
         <select class="list-sort-select" id="aa-pos-sort">
           <option value="default">Default</option>
           <option value="yes-desc">YES (most)</option>
@@ -133,7 +134,7 @@ function renderLoading(): string {
 }
 
 function renderError(msg: string): string {
-  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;

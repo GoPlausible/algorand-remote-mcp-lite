@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import "./alpha-common.css";
+import { esc } from "./alpha-escape";
 
 interface TradeResultData {
   type: "limit" | "market";
@@ -41,14 +42,14 @@ function renderResult(d: TradeResultData): string {
     ? `<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>`
     : `<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>`;
   const sideBadge = d.side === "BUY"
-    ? `<span class="aa-badge aa-badge-buy">${d.side}</span>`
-    : `<span class="aa-badge aa-badge-sell">${d.side}</span>`;
+    ? `<span class="aa-badge aa-badge-buy">${esc(d.side)}</span>`
+    : `<span class="aa-badge aa-badge-sell">${esc(d.side)}</span>`;
   const posBadge = d.position === "YES"
-    ? `<span class="aa-badge aa-badge-yes">${d.position}</span>`
-    : `<span class="aa-badge aa-badge-no">${d.position}</span>`;
+    ? `<span class="aa-badge aa-badge-yes">${esc(d.position)}</span>`
+    : `<span class="aa-badge aa-badge-no">${esc(d.position)}</span>`;
 
   const txHtml = d.txIds.map((tx) =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono,'SF Mono',monospace);font-size:11px">${truncTxId(tx)} <button class="aa-copy-inline" data-copy="${tx}" title="Copy Tx ID">${COPY_SVG}</button></span>`
+    `<span style="display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono,'SF Mono',monospace);font-size:11px">${esc(truncTxId(tx))} <button class="aa-copy-inline" data-copy="${esc(tx)}" title="Copy Tx ID">${COPY_SVG}</button></span>`
   ).join("<br>");
 
   return `
@@ -58,7 +59,7 @@ function renderResult(d: TradeResultData): string {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg>
         </div>
         <div class="aa-header-text">
-          <div class="aa-title">${title}</div>
+          <div class="aa-title">${esc(title)}</div>
           <div class="aa-subtitle">${sideBadge} ${posBadge}</div>
         </div>
       </div>
@@ -66,11 +67,11 @@ function renderResult(d: TradeResultData): string {
       <div class="aa-pct-panels">
         <div class="aa-pct-panel aa-pct-yes">
           <div class="aa-pct-panel-label">Price</div>
-          <div class="aa-pct-panel-val" style="color:var(--color-text-primary,#1a1a2e)">${d.price}</div>
+          <div class="aa-pct-panel-val" style="color:var(--color-text-primary,#1a1a2e)">${esc(d.price)}</div>
         </div>
         <div class="aa-pct-panel" style="background:rgba(139,92,246,.08)">
           <div class="aa-pct-panel-label" style="color:#7c3aed">Quantity</div>
-          <div class="aa-pct-panel-val" style="color:#7c3aed">${d.quantity}</div>
+          <div class="aa-pct-panel-val" style="color:#7c3aed">${esc(d.quantity)}</div>
         </div>
       </div>
 
@@ -78,26 +79,26 @@ function renderResult(d: TradeResultData): string {
       <div class="aa-pct-panels">
         <div class="aa-pct-panel" style="background:rgba(14,165,233,.08)">
           <div class="aa-pct-panel-label" style="color:#0284c7">Fill Price</div>
-          <div class="aa-pct-panel-val" style="color:#0284c7">${d.fillPrice}</div>
+          <div class="aa-pct-panel-val" style="color:#0284c7">${esc(d.fillPrice)}</div>
         </div>
         <div class="aa-pct-panel" style="background:rgba(14,165,233,.08)">
           <div class="aa-pct-panel-label" style="color:#0284c7">Matched</div>
-          <div class="aa-pct-panel-val" style="color:#0284c7">${d.matchedQuantity || "—"}</div>
+          <div class="aa-pct-panel-val" style="color:#0284c7">${esc(d.matchedQuantity || "—")}</div>
         </div>
       </div>` : ""}
 
       <div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${d.marketAppId} <button class="aa-copy-inline" data-copy="${d.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(d.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(d.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Escrow App ID</span>
-          <span class="aa-detail-value">${d.escrowAppId} <button class="aa-copy-inline" data-copy="${d.escrowAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(d.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(d.escrowAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Confirmed Round</span>
-          <span class="aa-detail-value">${d.confirmedRound}</span>
+          <span class="aa-detail-value">${esc(d.confirmedRound)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Transaction${d.txIds.length > 1 ? "s" : ""}</span>
@@ -109,11 +110,11 @@ function renderResult(d: TradeResultData): string {
 
 function renderLoading(type?: string): string {
   const label = type === "market" ? "market order" : "sell order";
-  return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">Placing ${label}...</div></div>`;
+  return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">Placing ${esc(label)}...</div></div>`;
 }
 
 function renderError(msg: string): string {
-  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;

@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import "./alpha-common.css";
+import { esc } from "./alpha-escape";
 
 interface OrderManageData {
   type: "cancel" | "amend" | "match";
@@ -55,21 +56,21 @@ function renderResult(d: OrderManageData): string {
     : `<span class="aa-badge aa-badge-no">Failed</span>`;
 
   const txHtml = d.txIds.map((tx) =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono,'SF Mono',monospace);font-size:11px">${truncTxId(tx)} <button class="aa-copy-inline" data-copy="${tx}" title="Copy Tx ID">${COPY_SVG}</button></span>`
+    `<span style="display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono,'SF Mono',monospace);font-size:11px">${esc(truncTxId(tx))} <button class="aa-copy-inline" data-copy="${esc(tx)}" title="Copy Tx ID">${COPY_SVG}</button></span>`
   ).join("<br>");
 
   const extraRows = d.details.map((det) =>
-    `<div class="aa-detail-row"><span class="aa-detail-label">${det.label}</span><span class="aa-detail-value">${det.value}</span></div>`
+    `<div class="aa-detail-row"><span class="aa-detail-label">${esc(det.label)}</span><span class="aa-detail-value">${esc(det.value)}</span></div>`
   ).join("");
 
   return `
     <div class="aa-card">
       <div class="aa-header">
-        <div class="aa-icon" style="${d.success ? "" : "background:linear-gradient(135deg,#ef4444,#dc2626)"}">
+        <div class="aa-icon" style="${esc(d.success ? "" : "background:linear-gradient(135deg,#ef4444,#dc2626)")}">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${cfg.icon}</svg>
         </div>
         <div class="aa-header-text">
-          <div class="aa-title">${cfg.title}</div>
+          <div class="aa-title">${esc(cfg.title)}</div>
           <div class="aa-subtitle">${statusBadge}</div>
         </div>
       </div>
@@ -77,16 +78,16 @@ function renderResult(d: OrderManageData): string {
       <div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${d.marketAppId} <button class="aa-copy-inline" data-copy="${d.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(d.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(d.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Escrow App ID</span>
-          <span class="aa-detail-value">${d.escrowAppId} <button class="aa-copy-inline" data-copy="${d.escrowAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(d.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(d.escrowAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         ${extraRows}
         <div class="aa-detail-row">
           <span class="aa-detail-label">Confirmed Round</span>
-          <span class="aa-detail-value">${d.confirmedRound}</span>
+          <span class="aa-detail-value">${esc(d.confirmedRound)}</span>
         </div>
         ${d.txIds.length > 0 ? `<div class="aa-detail-row">
           <span class="aa-detail-label">Transaction${d.txIds.length > 1 ? "s" : ""}</span>
@@ -97,11 +98,11 @@ function renderResult(d: OrderManageData): string {
 }
 
 function renderLoading(verb?: string): string {
-  return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">${verb || "Processing"} order...</div></div>`;
+  return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">${esc(verb || "Processing")} order...</div></div>`;
 }
 
 function renderError(msg: string): string {
-  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;

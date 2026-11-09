@@ -1,7 +1,15 @@
 // workers-oauth-utils.ts
 
-import type { AuthRequest, ClientInfo } from "./oauth-provider"; // Adjust path if necessary
+import type { AuthRequest, ClientInfo, OAuthHelpers } from "./oauth-provider"; // Adjust path if necessary
 import type { Context } from "hono";
+import {
+  clearFlowCookie,
+  consentCookieName,
+  consumeConsent,
+  createUpstreamState,
+  isOAuthProvider,
+  type OAuthProviderName,
+} from "./utils/oauthFlow";
 const COOKIE_NAME = "mcp-approved-clients";
 const ONE_YEAR_IN_SECONDS = 31536000;
 
@@ -25,20 +33,6 @@ function _encodeState(data: any): string {
 }
 
 
-/**
- * Decodes a URL-safe base64 string back to its original data.
- * @param encoded - The URL-safe base64 encoded string.
- * @returns The original data.
- */
-function decodeState<T = any>(encoded: string): T {
-  try {
-    const jsonString = atob(encoded);
-    return JSON.parse(jsonString);
-  } catch (e) {
-    console.error("[WORKER_OAUTH_UTILS] Error decoding state:", e);
-    throw new Error("Could not decode state");
-  }
-}
 function _b64url(u8: Uint8Array) {
   return btoa(String.fromCharCode(...u8)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
@@ -237,10 +231,14 @@ export interface ApprovalDialogOptions {
     description?: string;
   };
   /**
-   * Arbitrary state data to pass through the approval flow
-   * Will be encoded in the form and returned when approval is complete
+   * Consent token from createConsent(). The form submits it, and POST /authorize accepts it
+   * only together with the matching consent cookie (see src/utils/oauthFlow.ts).
    */
-  state: Record<string, any>;
+  consentToken: string;
+  /**
+   * Set-Cookie value for the consent cookie, from createConsent().
+   */
+  setCookie: string;
   /**
    * Name of the cookie to use for storing approvals
    * @default "mcp_approved_clients"
@@ -280,11 +278,8 @@ export interface ApprovalDialogOptions {
  * @returns A Response containing the HTML approval dialog
  */
 export function renderApprovalDialog(request: Request, options: ApprovalDialogOptions): Response {
-  const { client, server, state } = options;
-  console.log("[WORKER_OAUTH_UTILS] Rendering approval dialog with options:", options);
-
-  // Encode state for form submission
-  const encodedState = btoa(JSON.stringify(state));
+  const { client, server, consentToken, setCookie } = options;
+  console.log("[WORKER_OAUTH_UTILS] Rendering approval dialog for client:", client?.clientId);
 
   // Sanitize any untrusted content
   const serverName = sanitizeHtml(server.name);
@@ -297,7 +292,9 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
   const logoUrl = server.logo ? sanitizeHtml(server.logo) : "";
   console.log("[WORKER_OAUTH_UTILS] Sanitized logo URL:", logoUrl.substring(0, 100)); // Log first 100 chars for brevity
   // const clientUri = client?.clientUri ? sanitizeHtml(client.clientUri) : "";
-  const clientUri = "https://algorandmcplite.goplausible.xyz"; // Default to GoPlausible MCP URL
+  // Not shown: this server's own URL used to appear as the "Website" of every requesting client,
+  // including self-registered ones, which lent them this server's identity.
+  const clientUri = "";
   console.log("[WORKER_OAUTH_UTILS] Sanitized client URI:", clientUri.substring(0, 100)); // Log first 100 chars for brevity
   // const policyUri = client?.policyUri ? sanitizeHtml(client.policyUri) : "http://goplausible.com/policy";
   const policyUri = "http://goplausible.com/policy";
@@ -716,8 +713,8 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
             
             <p>This MCP Client is requesting to be authorized on ${serverName}. Choose a provider to continue authentication:</p>
             
-            <form method="post" action="${new URL(request.url).pathname}">
-              <input type="hidden" name="state" value="${encodedState}">
+            <form method="post" action="${new URL(request.url).pathname}" onsubmit="if(this.dataset.sent){return false;}this.dataset.sent='1';">
+              <input type="hidden" name="consent_token" value="${sanitizeHtml(consentToken)}">
               <!-- Add a hidden field to store the provider preference in the approval form -->
               <input type="hidden" name="provider_preference" id="provider_preference" value="google">
               
@@ -755,6 +752,10 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
             Powered by <a href="https://algorand.co" target="_blank" rel="noopener noreferrer">Algorand</a>
           </div>
         </div>
+        <script>
+          // A page restored from the back/forward cache holds a consent token that was already used
+          addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
+        </script>
       </body>
     </html>
   `;
@@ -767,6 +768,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
   return new Response(htmlContent, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      // RFC 6749 §10.13: the consent page must not be framed (clickjacking)
+      "Content-Security-Policy": "frame-ancestors 'none'",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
+      "Set-Cookie": setCookie,
     },
   });
 }
@@ -775,10 +782,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
  * Result of parsing the approval form submission.
  */
 export interface ParsedApprovalResult {
-  /** The original state object passed through the form. */
-  state: any;
-  /** Headers to set on the redirect response, including the Set-Cookie header. */
-  headers: Record<string, string>;
+  /** The validated authorization request stored when the consent form was rendered. */
+  authReqInfo: AuthRequest;
+  /** The provider the user chose. */
+  provider: OAuthProviderName;
+  /** Set-Cookie values for the redirect response (clears this flow's consent cookie). */
+  setCookies: string[];
 }
 export async function revokeUpstreamToken(
   provider: string,
@@ -915,12 +924,18 @@ export async function revokeUpstreamToken(
     return false;
   }
 }
+/**
+ * Redirects the browser to the chosen upstream provider. The flow (provider, validated
+ * authorization request, X PKCE verifier) is stored server-side under a random `state`
+ * that is bound to this browser by a cookie; GET /callback consumes it.
+ *
+ * @param setCookies - extra Set-Cookie values for the redirect (e.g. from parseRedirectApproval)
+ */
 export async function redirectToProvider(
   c: Context,
-  provider: string,
-  clientId: string,
+  provider: OAuthProviderName,
   authReqInfo: AuthRequest,
-  headers: Record<string, string> = {},
+  setCookies: string[] = [],
 ) {
   // Configure provider-specific OAuth parameters
 
@@ -930,8 +945,9 @@ export async function redirectToProvider(
   let redirectUri = '';
   let codeChallengeParam: string | undefined;
   let codeChallengeMethod: string | undefined;
+  let codeVerifier: string | undefined;
   let redirectUriOverride: string | undefined;
-  let clientIdParam = clientId;
+  let clientIdParam = '';
   switch (provider) {
     case "github":
       console.log("[WORKER_OAUTH_UTILS] Redirecting to GitHub for OAuth authorization");
@@ -948,15 +964,9 @@ export async function redirectToProvider(
       upstreamUrl = "https://x.com/i/oauth2/authorize";
       redirectUri = new URL("/callback", c.req.raw.url).href;
       redirectUriOverride =  (c.env.BASE_URL ? new URL("/callback", c.env.BASE_URL).href : undefined);
-      const cv = generateCodeVerifier();
-      const cc = await computeS256CodeChallenge(cv);
-      codeChallengeParam = cc;
+      codeVerifier = generateCodeVerifier();
+      codeChallengeParam = await computeS256CodeChallenge(codeVerifier);
       codeChallengeMethod = "S256";
-      await c.env.CODE_VERIFIER_KV.put(
-        `pkce:${authReqInfo.clientId}`,
-        JSON.stringify({ codeVerifier: cv, upstreamRedirectUri: redirectUriOverride || new URL("/callback", c.req.raw.url).href }),
-        { expirationTtl: 600 }
-      );
       break;
     }
     case "linkedin":
@@ -977,108 +987,97 @@ export async function redirectToProvider(
     default:
   throw new Error(`Unsupported OAuth provider: ${provider}`);
   }
-  console.log(`[WORKER_OAUTH_UTILS] Redirecting to ${provider} with clientId: ${clientId}, scope: ${scope}, redirectUri: ${redirectUri}`);
-  // Store the provider in the state for use in the callback
-  const stateWithProvider = {
-    clientId: authReqInfo.clientId,
-    provider,
-    authReqInfo
-  };
+  console.log(`[WORKER_OAUTH_UTILS] Redirecting to ${provider} for MCP client ${authReqInfo.clientId}, scope: ${scope}, redirectUri: ${redirectUri}`);
 
-  return new Response(null, {
-    headers: {
-      ...headers,
-      location: getUpstreamAuthorizeUrl({
-        provider,
-        codeChallenge: provider === 'twitter' ? codeChallengeParam : authReqInfo.codeChallenge,
-        codeChallengeMethod: provider === 'twitter' ? codeChallengeMethod : authReqInfo.codeChallengeMethod,
-        clientId: clientIdParam,
-        hostedDomain,
-        redirectUri: redirectUriOverride || redirectUri,
-        scope,
-        grantType: "authorization_code",
-        state: btoa(JSON.stringify(stateWithProvider)),
-        upstreamUrl,
-      }),
-    },
-    status: 302,
+  // Store the flow server-side under a random state bound to this browser (see oauthFlow.ts)
+  const { state, setCookie } = await createUpstreamState(c.env.CODE_VERIFIER_KV, {
+    provider,
+    authReqInfo,
+    codeVerifier,
   });
+
+  const headers = new Headers();
+  for (const cookie of [...setCookies, setCookie]) headers.append("Set-Cookie", cookie);
+  headers.set(
+    "Location",
+    getUpstreamAuthorizeUrl({
+      provider,
+      codeChallenge: provider === 'twitter' ? codeChallengeParam : authReqInfo.codeChallenge,
+      codeChallengeMethod: provider === 'twitter' ? codeChallengeMethod : authReqInfo.codeChallengeMethod,
+      clientId: clientIdParam,
+      hostedDomain,
+      redirectUri: redirectUriOverride || redirectUri,
+      scope,
+      grantType: "authorization_code",
+      state,
+      upstreamUrl,
+    }),
+  );
+  return new Response(null, { headers, status: 302 });
 }
 
 /**
- * Parses the form submission from the approval dialog, extracts the state,
- * and generates Set-Cookie headers to mark the client as approved.
+ * Validates the consent form submission and generates the cookies that remember the approval.
  *
- * @param request - The incoming POST Request object containing the form data.
- * @param cookieSecret - The secret key used to sign the approval cookie.
- * @returns A promise resolving to an object containing the parsed state and necessary headers.
- * @throws If the request method is not POST, form data is invalid, or state is missing.
+ * The authorization request is never read from the form: it is the server-side record created
+ * when the form was rendered, released only if the submitted consent token matches this
+ * browser's consent cookie (CSRF protection; see src/utils/oauthFlow.ts).
+ *
+ * @param request - The incoming POST request from the consent form.
+ * @param env - Needs CODE_VERIFIER_KV, OAUTH_PROVIDER and COOKIE_ENCRYPTION_KEY.
+ * @throws If the request is not a POST, the consent is missing/expired/not from this browser,
+ *   the provider is unknown, or the client or its redirect URI is no longer valid.
  */
 export async function parseRedirectApproval(
   request: Request,
-  cookieSecret: string,
+  env: { CODE_VERIFIER_KV: KVNamespace; OAUTH_PROVIDER: OAuthHelpers; COOKIE_ENCRYPTION_KEY?: string },
 ): Promise<ParsedApprovalResult> {
   if (request.method !== "POST") {
     throw new Error("Invalid request method. Expected POST.");
   }
 
-  let state: any;
-  let clientId: string | undefined;
+  const formData = await request.formData();
+  const provider = formData.get("provider");
+  const consentToken = formData.get("consent_token");
 
-  try {
-    const formData = await request.formData();
-    const encodedState = formData.get("state");
-    const providerPreference = formData.get("provider_preference");
-
-    if (typeof encodedState !== "string" || !encodedState) {
-      throw new Error("Missing or invalid 'state' in form data.");
-    }
-
-    state = decodeState<{ clientId?: string, provider?: string }>(encodedState); // Decode the state
-    clientId = state?.clientId; // Extract clientId from within the state
-
-    if (!clientId) {
-      throw new Error("Could not extract clientId from state object.");
-    }
-
-    // Add the provider preference to the state for use in the GET handler
-    state.providerPreference = providerPreference;
-  } catch (e) {
-    console.error("[WORKER_OAUTH_UTILS] Error processing form submission:", e);
-    // Rethrow or handle as appropriate, maybe return a specific error response
-    throw new Error(
-      `Failed to parse approval form: ${e instanceof Error ? e.message : String(e)}`,
-    );
+  const authReqInfo = await consumeConsent(env.CODE_VERIFIER_KV, request, consentToken);
+  if (!authReqInfo || typeof consentToken !== "string") {
+    throw new Error("Consent token missing, expired, already used, or not issued to this browser.");
+  }
+  if (!isOAuthProvider(provider)) {
+    throw new Error("Unknown provider.");
   }
 
-  // Get existing approved clients
-  const cookieHeader = request.headers.get("Cookie");
-  const existingApprovedClients =
-    (await getApprovedClientsFromCookie(cookieHeader, cookieSecret)) || [];
-
-  // Add the newly approved client ID (avoid duplicates)
-  const updatedApprovedClients = Array.from(new Set([...existingApprovedClients, clientId]));
-
-  // Sign the updated list
-  const payload = JSON.stringify(updatedApprovedClients);
-  const key = await importKey(cookieSecret);
-  const signature = await signWithHmacSha256(key, payload);
-  const newCookieValue = `${signature}.${btoa(payload)}`; // signature.base64(payload)
-
-  // Generate Set-Cookie headers
-  const headers: Record<string, string> = {
-    "Set-Cookie": `${COOKIE_NAME}=${newCookieValue}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${ONE_YEAR_IN_SECONDS}`,
-  };
-
-  // Add provider preference cookie
-  if (state.providerPreference) {
-    headers["Set-Cookie"] = [
-      headers["Set-Cookie"],
-      `mcp-provider-preference=${state.providerPreference}; Secure; Path=/; SameSite=Lax; Max-Age=${ONE_YEAR_IN_SECONDS}`
-    ].join(", ");
+  // The request was validated when the form was rendered; check again that the client and
+  // its redirect URI are still registered (RFC 6749 §3.1.2.4).
+  const client = await env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId);
+  if (!client || !client.redirectUris.includes(authReqInfo.redirectUri)) {
+    throw new Error("Client or redirect URI is no longer registered.");
   }
 
-  return { headers, state };
+  // Remembered approvals are parked: consent is asked on every authorization, as production has
+  // always behaved (the provider-preference cookie was never stored because it was joined into
+  // one Set-Cookie header). Auto-approving repeat requests without user interaction would break
+  // RFC 6749 §10.2 / RFC 8252 §8.6 for public clients, the old cookies had no __Host- prefix
+  // (MCP Security Best Practices, consent cookies), and the preference was browser-wide rather
+  // than per client. To restore it: store {clientId: provider} in a signed __Host- cookie and only
+  // shortcut for clients whose identity is assured.
+  //
+  // const cookieSecret = env.COOKIE_ENCRYPTION_KEY || "";
+  // const cookieHeader = request.headers.get("Cookie");
+  // const existingApprovedClients =
+  //   (await getApprovedClientsFromCookie(cookieHeader, cookieSecret)) || [];
+  // const updatedApprovedClients = Array.from(new Set([...existingApprovedClients, authReqInfo.clientId]));
+  // const payload = JSON.stringify(updatedApprovedClients);
+  // const key = await importKey(cookieSecret);
+  // const signature = await signWithHmacSha256(key, payload);
+  // const newCookieValue = `${signature}.${btoa(payload)}`; // signature.base64(payload)
+  // `${COOKIE_NAME}=${newCookieValue}; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=${ONE_YEAR_IN_SECONDS}`,
+  // `mcp-provider-preference=${provider}; Secure; Path=/; SameSite=Lax; Max-Age=${ONE_YEAR_IN_SECONDS}`,
+
+  const setCookies = [clearFlowCookie(consentCookieName(consentToken))];
+
+  return { authReqInfo, provider, setCookies };
 }
 
 /**

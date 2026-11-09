@@ -6,6 +6,7 @@ import {
 	applyHostStyleVariables,
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { esc } from "./alpha-escape";
 import "./alpha-common.css";
 
 interface MarketDetail {
@@ -106,14 +107,14 @@ function renderOrderRow(o: OrderEntry): string {
 			: `<span class="aa-badge aa-badge-sell">SELL</span>`;
 
 	return `
-    <div class="aa-row aa-order-row" data-escrow="${o.escrowAppId}" style="cursor:pointer">
+    <div class="aa-row aa-order-row" data-escrow="${esc(o.escrowAppId)}" style="cursor:pointer">
       <div class="aa-row-info">
-        <div class="aa-row-title">Escrow ${o.escrowAppId}</div>
-        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${o.quantity} · Filled: ${o.filled}</span></div>
+        <div class="aa-row-title">Escrow ${esc(o.escrowAppId)}</div>
+        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${esc(o.quantity)} · Filled: ${esc(o.filled)}</span></div>
       </div>
       <div class="aa-row-right">
-        <span class="aa-row-price">${o.price}</span>
-        <span class="aa-row-vol">Rem: ${o.remaining}</span>
+        <span class="aa-row-price">${esc(o.price)}</span>
+        <span class="aa-row-vol">Rem: ${esc(o.remaining)}</span>
       </div>
     </div>`;
 }
@@ -124,8 +125,8 @@ function renderPositionHtml(): string {
 	<div class="aa-position-section">
 		<div class="aa-trade-label">Your Position</div>
 		<div style="display:flex;gap:8px;padding:4px 0">
-			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${marketPosition.yesBalance}</span></div>
-			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${marketPosition.noBalance}</span></div>
+			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${esc(marketPosition.yesBalance)}</span></div>
+			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${esc(marketPosition.noBalance)}</span></div>
 		</div>
 	</div>`;
 }
@@ -141,7 +142,7 @@ function renderOrdersSection(): string {
 	}
 
 	return `${posHtml}<div class="aa-orders-section">
-    <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${openOrders.length})</span></div>
+    <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${esc(openOrders.length)})</span></div>
     <div id="aa-orders-list">${openOrders.map(renderOrderRow).join("")}</div>
   </div>`;
 }
@@ -169,42 +170,42 @@ function renderOrderDetailView(o: OrderEntry): string {
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Order Detail</div>
-          <div class="aa-subtitle">${posBadge} ${sideBadge} on ${m.title || `Market ${m.marketAppId}`}</div>
+          <div class="aa-subtitle">${posBadge} ${sideBadge} on ${esc(m.title || `Market ${m.marketAppId}`)}</div>
         </div>
       </div>
 
       <div id="aa-order-fields">
         <div class="aa-detail-row">
           <span class="aa-detail-label">Escrow App ID</span>
-          <span class="aa-detail-value">${o.escrowAppId} <button class="aa-copy-inline" data-copy="${o.escrowAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(o.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(o.escrowAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${m.marketAppId} <button class="aa-copy-inline" data-copy="${m.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(m.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(m.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Position</span>
-          <span class="aa-detail-value">${o.position}</span>
+          <span class="aa-detail-value">${esc(o.position)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Side</span>
-          <span class="aa-detail-value">${o.side}</span>
+          <span class="aa-detail-value">${esc(o.side)}</span>
         </div>
         <div class="aa-detail-row" id="aa-od-price-row">
           <span class="aa-detail-label">Price</span>
-          <span class="aa-detail-value">${o.price}</span>
+          <span class="aa-detail-value">${esc(o.price)}</span>
         </div>
         <div class="aa-detail-row" id="aa-od-qty-row">
           <span class="aa-detail-label">Quantity</span>
-          <span class="aa-detail-value">${o.quantity}</span>
+          <span class="aa-detail-value">${esc(o.quantity)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Filled</span>
-          <span class="aa-detail-value">${o.filled}</span>
+          <span class="aa-detail-value">${esc(o.filled)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Remaining</span>
-          <span class="aa-detail-value">${o.remaining}</span>
+          <span class="aa-detail-value">${esc(o.remaining)}</span>
         </div>
       </div>
 
@@ -228,7 +229,7 @@ function showOrderEditMode() {
 		priceRow.innerHTML = `
       <span class="aa-detail-label">Price</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-edit-price" value="${priceVal.toFixed(2)}" step="0.01" min="0.01" max="0.99">
+        <input type="number" class="aa-edit-input" id="aa-edit-price" value="${esc(priceVal.toFixed(2))}" step="0.01" min="0.01" max="0.99">
       </span>`;
 	}
 	const qtyRow = root.querySelector("#aa-od-qty-row");
@@ -236,7 +237,7 @@ function showOrderEditMode() {
 		qtyRow.innerHTML = `
       <span class="aa-detail-label">Quantity</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-edit-qty" value="${qtyVal.toFixed(2)}" step="0.1" min="0.1">
+        <input type="number" class="aa-edit-input" id="aa-edit-qty" value="${esc(qtyVal.toFixed(2))}" step="0.1" min="0.1">
       </span>`;
 	}
 	const actionArea = root.querySelector("#aa-order-action-area");
@@ -259,11 +260,11 @@ function cancelEditMode() {
 	const o = selectedOrder;
 	const priceRow = root.querySelector("#aa-od-price-row");
 	if (priceRow) {
-		priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${o.price}</span>`;
+		priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${esc(o.price)}</span>`;
 	}
 	const qtyRow = root.querySelector("#aa-od-qty-row");
 	if (qtyRow) {
-		qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${o.quantity}</span>`;
+		qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${esc(o.quantity)}</span>`;
 	}
 	const actionArea = root.querySelector("#aa-order-action-area");
 	if (actionArea) actionArea.innerHTML = "";
@@ -296,11 +297,11 @@ async function confirmAmendOrder() {
 			| { text?: string }
 			| undefined;
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order amended successfully!"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order amended successfully!")}</div>`;
 		isEditing = false;
 	} catch (err: any) {
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to amend order"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to amend order")}</div>`;
 	}
 }
 
@@ -326,10 +327,10 @@ async function cancelOrder() {
 			| { text?: string }
 			| undefined;
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order cancelled!"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order cancelled!")}</div>`;
 	} catch (err: any) {
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to cancel order"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to cancel order")}</div>`;
 		if (cancelBtn) cancelBtn.disabled = false;
 	}
 }
@@ -437,7 +438,7 @@ function attachObTabHandlers(area: Element, _data: OrderbookData) {
 
 function renderDetail(m: MarketDetail): string {
 	const statusBadge = m.isResolved
-		? `<span class="aa-badge aa-badge-resolved">Resolved${m.resolvedOutcome ? ` — ${m.resolvedOutcome}` : ""}</span>`
+		? `<span class="aa-badge aa-badge-resolved">Resolved${m.resolvedOutcome ? ` — ${esc(m.resolvedOutcome)}` : ""}</span>`
 		: `<span class="aa-badge aa-badge-live">Live</span>`;
 
 	const endDate = m.endTs
@@ -451,7 +452,7 @@ function renderDetail(m: MarketDetail): string {
 		: "—";
 
 	const catHtml = m.categories?.length
-		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${c}</span>`).join(" ")
+		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${esc(c)}</span>`).join(" ")
 		: "";
 
 	const optionsHtml = m.options?.length
@@ -460,8 +461,8 @@ function renderDetail(m: MarketDetail): string {
 			.map(
 				(o) => `
          <div class="aa-detail-row">
-           <span class="aa-detail-label">${o.title}</span>
-           <span class="aa-detail-value">${o.marketAppId} <button class="aa-copy-inline" data-copy="${o.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+           <span class="aa-detail-label">${esc(o.title)}</span>
+           <span class="aa-detail-value">${esc(o.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(o.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
          </div>`,
 			)
 			.join("")}
@@ -469,8 +470,8 @@ function renderDetail(m: MarketDetail): string {
 		: "";
 
 	const rewardsHtml = m.totalRewards
-		? `<div class="aa-detail-row"><span class="aa-detail-label">Total Rewards</span><span class="aa-detail-value">$${m.totalRewards.toFixed(2)}</span></div>
-       <div class="aa-detail-row"><span class="aa-detail-label">Rewards Paid</span><span class="aa-detail-value">$${(m.rewardsPaidOut || 0).toFixed(2)}</span></div>`
+		? `<div class="aa-detail-row"><span class="aa-detail-label">Total Rewards</span><span class="aa-detail-value">$${esc(m.totalRewards.toFixed(2))}</span></div>
+       <div class="aa-detail-row"><span class="aa-detail-label">Rewards Paid</span><span class="aa-detail-value">$${esc((m.rewardsPaidOut || 0).toFixed(2))}</span></div>`
 		: "";
 
 	const displayTitle = m.title || `Market ${m.marketAppId}`;
@@ -489,43 +490,43 @@ function renderDetail(m: MarketDetail): string {
 	];
 	const iconColor = iconColors[(displayTitle.charCodeAt(0) || 0) % iconColors.length];
 	const iconHtml = m.image
-		? `<img class="aa-mc-img" src="${m.image}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${iconColor};display:none">${firstLetter}</div>`
-		: `<div class="aa-mc-icon-fallback" style="background:${iconColor}">${firstLetter}</div>`;
+		? `<img class="aa-mc-img" src="${esc(m.image)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${esc(iconColor)};display:none">${esc(firstLetter)}</div>`
+		: `<div class="aa-mc-icon-fallback" style="background:${esc(iconColor)}">${esc(firstLetter)}</div>`;
 
 	return `
     <div class="aa-card">
       <div class="aa-header">
         <div class="aa-mc-icon-wrap">${iconHtml}</div>
         <div class="aa-header-text">
-          <div class="aa-title">${displayTitle}</div>
+          <div class="aa-title">${esc(displayTitle)}</div>
           <div class="aa-subtitle">${statusBadge} ${catHtml}</div>
         </div>
       </div>
 
-      ${m.description ? `<div style="font-size:13px;color:var(--color-text-secondary,#64748b);line-height:1.5;padding:4px 0">${m.description}</div>` : ""}
+      ${m.description ? `<div style="font-size:13px;color:var(--color-text-secondary,#64748b);line-height:1.5;padding:4px 0">${esc(m.description)}</div>` : ""}
 
       <div style="display:flex;gap:8px;justify-content:center;padding:12px 0">
         <div style="flex:1;text-align:center;padding:12px;border-radius:12px;background:rgba(34,197,94,.08)">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin-bottom:4px">Yes</div>
-          <div style="font-size:22px;font-weight:700;font-family:var(--font-mono,'SF Mono',monospace);color:#16a34a">${formatPrice(m.yesProb)}</div>
+          <div style="font-size:22px;font-weight:700;font-family:var(--font-mono,'SF Mono',monospace);color:#16a34a">${esc(formatPrice(m.yesProb))}</div>
         </div>
         <div style="flex:1;text-align:center;padding:12px;border-radius:12px;background:rgba(239,68,68,.08)">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#dc2626;margin-bottom:4px">No</div>
-          <div style="font-size:22px;font-weight:700;font-family:var(--font-mono,'SF Mono',monospace);color:#dc2626">${formatPrice(m.noProb)}</div>
+          <div style="font-size:22px;font-weight:700;font-family:var(--font-mono,'SF Mono',monospace);color:#dc2626">${esc(formatPrice(m.noProb))}</div>
         </div>
       </div>
 
       <div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${m.marketAppId} <button class="aa-copy-inline" data-copy="${m.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(m.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(m.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
-        ${m.yesAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">YES Asset ID</span><span class="aa-detail-value">${m.yesAssetId} <button class="aa-copy-inline" data-copy="${m.yesAssetId}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
-        ${m.noAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">NO Asset ID</span><span class="aa-detail-value">${m.noAssetId} <button class="aa-copy-inline" data-copy="${m.noAssetId}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
-        ${m.volume != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Volume</span><span class="aa-detail-value">$${m.volume.toFixed(2)}</span></div>` : ""}
-        <div class="aa-detail-row"><span class="aa-detail-label">Ends</span><span class="aa-detail-value">${endDate}</span></div>
-        ${m.source ? `<div class="aa-detail-row"><span class="aa-detail-label">Source</span><span class="aa-detail-value">${m.source}</span></div>` : ""}
-        ${m.feeBase != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Fee</span><span class="aa-detail-value">${m.feeBase}%</span></div>` : ""}
+        ${m.yesAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">YES Asset ID</span><span class="aa-detail-value">${esc(m.yesAssetId)} <button class="aa-copy-inline" data-copy="${esc(m.yesAssetId)}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
+        ${m.noAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">NO Asset ID</span><span class="aa-detail-value">${esc(m.noAssetId)} <button class="aa-copy-inline" data-copy="${esc(m.noAssetId)}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
+        ${m.volume != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Volume</span><span class="aa-detail-value">$${esc(m.volume.toFixed(2))}</span></div>` : ""}
+        <div class="aa-detail-row"><span class="aa-detail-label">Ends</span><span class="aa-detail-value">${esc(endDate)}</span></div>
+        ${m.source ? `<div class="aa-detail-row"><span class="aa-detail-label">Source</span><span class="aa-detail-value">${esc(m.source)}</span></div>` : ""}
+        ${m.feeBase != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Fee</span><span class="aa-detail-value">${esc(m.feeBase)}%</span></div>` : ""}
         ${rewardsHtml}
       </div>
       ${optionsHtml}
@@ -536,8 +537,8 @@ function renderDetail(m: MarketDetail): string {
       <div class="aa-trade-section">
         <div class="aa-trade-label">Trade</div>
         <div class="aa-trade-btns">
-          <button class="aa-trade-btn aa-trade-btn-yes-market" data-trade="market" data-pos="1">Buy YES<span class="aa-trade-btn-sub">Market @ ${formatPrice(m.yesProb)}</span></button>
-          <button class="aa-trade-btn aa-trade-btn-no-market" data-trade="market" data-pos="0">Buy NO<span class="aa-trade-btn-sub">Market @ ${formatPrice(m.noProb)}</span></button>
+          <button class="aa-trade-btn aa-trade-btn-yes-market" data-trade="market" data-pos="1">Buy YES<span class="aa-trade-btn-sub">Market @ ${esc(formatPrice(m.yesProb))}</span></button>
+          <button class="aa-trade-btn aa-trade-btn-no-market" data-trade="market" data-pos="0">Buy NO<span class="aa-trade-btn-sub">Market @ ${esc(formatPrice(m.noProb))}</span></button>
         </div>
         <div class="aa-trade-btns" style="margin-top:6px">
           <button class="aa-trade-btn aa-trade-btn-yes-limit" data-trade="limit" data-pos="1">Sell YES<span class="aa-trade-btn-sub">Set price &amp; qty</span></button>
@@ -555,7 +556,7 @@ function renderDetail(m: MarketDetail): string {
 				? `
       <div class="aa-rules-section">
         <div class="aa-trade-label">Rules</div>
-        <div class="aa-rules-text" id="aa-rules-text">${m.rules.length > 200 ? `${m.rules.slice(0, 200)}...` : m.rules}</div>
+        <div class="aa-rules-text" id="aa-rules-text">${m.rules.length > 200 ? `${esc(m.rules.slice(0, 200))}...` : esc(m.rules)}</div>
         ${m.rules.length > 200 ? `<button class="aa-rules-toggle" id="aa-rules-toggle">Show more</button>` : ""}
       </div>`
 				: ""
@@ -571,9 +572,9 @@ function renderOrderbook(data: OrderbookData): string {
 					.map(
 						(e) => `
 				<tr>
-					<td class="${cls}">${e.price}</td>
-					<td>${e.shares}</td>
-					<td>${e.total}</td>
+					<td class="${esc(cls)}">${esc(e.price)}</td>
+					<td>${esc(e.shares)}</td>
+					<td>${esc(e.total)}</td>
 				</tr>`,
 					)
 					.join("")
@@ -591,7 +592,7 @@ function renderOrderbook(data: OrderbookData): string {
 			<thead><tr><th>Price</th><th>Shares</th><th>Total</th></tr></thead>
 			<tbody>${renderRows(asks, "ob-ask")}</tbody>
 		</table>
-		<div class="ob-spread-row">Last: — &nbsp;&nbsp; Spread: ${spread}</div>
+		<div class="ob-spread-row">Last: — &nbsp;&nbsp; Spread: ${esc(spread)}</div>
 		<div class="ob-section-label ob-section-bids">Bids</div>
 		<table class="ob-table ob-table-compact">
 			<thead><tr><th>Price</th><th>Shares</th><th>Total</th></tr></thead>
@@ -601,11 +602,11 @@ function renderOrderbook(data: OrderbookData): string {
 }
 
 function renderLoading(id?: string): string {
-	return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">Loading market${id ? ` ${id}` : ""}...</div></div>`;
+	return `<div class="aa-card aa-loading"><div class="aa-loading-pulse"></div><div class="aa-loading-text">Loading market${id ? ` ${esc(id)}` : ""}...</div></div>`;
 }
 
 function renderError(msg: string): string {
-	return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+	return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;
@@ -652,13 +653,13 @@ function showTradeForm(type: "market" | "limit", position: 0 | 1) {
 			? `
     <div class="aa-trade-form-row">
       <span class="aa-trade-form-label">Price ($)</span>
-      <input type="number" class="aa-trade-input" id="aa-trade-price" value="${defaultPriceDisplay}" step="0.01" min="0.01" max="0.99">
+      <input type="number" class="aa-trade-input" id="aa-trade-price" value="${esc(defaultPriceDisplay)}" step="0.01" min="0.01" max="0.99">
     </div>`
 			: "";
 
 	area.innerHTML = `
     <div class="aa-trade-form">
-      <div class="aa-trade-form-title">${type === "market" ? "Market" : "Sell"} ${posLabel}</div>
+      <div class="aa-trade-form-title">${type === "market" ? "Market" : "Sell"} ${esc(posLabel)}</div>
       ${priceRow}
       <div class="aa-trade-form-row">
         <span class="aa-trade-form-label">Amount ($)</span>
@@ -667,7 +668,7 @@ function showTradeForm(type: "market" | "limit", position: 0 | 1) {
       </div>
       <div class="aa-trade-form-actions">
         <button class="aa-trade-cancel" id="aa-trade-cancel-btn">Cancel</button>
-        <button class="aa-trade-confirm aa-trade-confirm-${colorClass}" id="aa-trade-confirm-btn">Confirm ${type === "market" ? "Market" : "Sell"} ${posLabel}</button>
+        <button class="aa-trade-confirm aa-trade-confirm-${esc(colorClass)}" id="aa-trade-confirm-btn">Confirm ${type === "market" ? "Market" : "Sell"} ${esc(posLabel)}</button>
       </div>
     </div>`;
 
@@ -733,7 +734,7 @@ async function executeTrade(type: "market" | "limit", position: 0 | 1) {
 			const text = result.content?.find((c: any) => c.type === "text") as
 				| { text?: string }
 				| undefined;
-			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Market order submitted!"}</div>`;
+			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Market order submitted!")}</div>`;
 		} else {
 			const priceInput = root.querySelector("#aa-trade-price") as HTMLInputElement | null;
 			const price = Math.round(
@@ -753,10 +754,10 @@ async function executeTrade(type: "market" | "limit", position: 0 | 1) {
 			const text = result.content?.find((c: any) => c.type === "text") as
 				| { text?: string }
 				| undefined;
-			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Sell order placed!"}</div>`;
+			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Sell order placed!")}</div>`;
 		}
 	} catch (err: any) {
-		area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Trade failed"}</div>`;
+		area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Trade failed")}</div>`;
 	}
 }
 

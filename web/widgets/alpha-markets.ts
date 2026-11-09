@@ -6,6 +6,7 @@ import {
 	applyHostStyleVariables,
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { esc } from "./alpha-escape";
 import "./alpha-common.css";
 
 interface MarketEntry {
@@ -179,8 +180,8 @@ function renderMarketCard(m: MarketEntry): string {
 	const vol = formatVolume(m.volume);
 
 	const iconHtml = m.image
-		? `<img class="aa-mc-img" src="${m.image}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${color};display:none">${firstLetter}</div>`
-		: `<div class="aa-mc-icon-fallback" style="background:${color}">${firstLetter}</div>`;
+		? `<img class="aa-mc-img" src="${esc(m.image)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${esc(color)};display:none">${esc(firstLetter)}</div>`
+		: `<div class="aa-mc-icon-fallback" style="background:${esc(color)}">${esc(firstLetter)}</div>`;
 
 	const statusBadge = m.isResolved
 		? `<span class="aa-badge aa-badge-resolved">Resolved</span>`
@@ -191,11 +192,11 @@ function renderMarketCard(m: MarketEntry): string {
 		: "";
 
 	const multiChoice = m.options?.length
-		? `<span class="aa-badge aa-badge-source">${m.options.length} options</span>`
+		? `<span class="aa-badge aa-badge-source">${esc(m.options.length)} options</span>`
 		: "";
 
 	const catBadges = m.categories?.length
-		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${c}</span>`).join("")
+		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${esc(c)}</span>`).join("")
 		: "";
 
 	const endsLabel = m.endsAt
@@ -207,11 +208,11 @@ function renderMarketCard(m: MarketEntry): string {
 		: "";
 
 	return `
-    <div class="aa-market-card" data-market-id="${m.id}" data-market-app-id="${String(m.marketAppId)}">
+    <div class="aa-market-card" data-market-id="${esc(String(m.id))}" data-market-app-id="${esc(String(m.marketAppId))}">
       <div class="aa-mc-top">
         <div class="aa-mc-icon-wrap">${iconHtml}</div>
         <div class="aa-mc-info">
-          <div class="aa-mc-title">${m.title || `Market ${m.marketAppId}`}</div>
+          <div class="aa-mc-title">${esc(m.title || `Market ${m.marketAppId}`)}</div>
           <div class="aa-mc-meta">
             ${statusBadge}${rewardBadge}${multiChoice}${catBadges}
           </div>
@@ -220,16 +221,16 @@ function renderMarketCard(m: MarketEntry): string {
 			yesPct !== null
 				? `
         <div class="aa-mc-pct">
-          <span class="aa-mc-pct-val">${yesPct}%</span>
+          <span class="aa-mc-pct-val">${esc(yesPct)}%</span>
           <span class="aa-mc-pct-label">Yes</span>
         </div>`
 				: ""
 		}
       </div>
       <div class="aa-mc-bottom">
-        ${vol ? `<span class="aa-mc-vol">${vol}</span>` : ""}
-        ${endsLabel ? `<span class="aa-mc-end">${endsLabel}</span>` : ""}
-        <button class="aa-copy-inline" data-copy="${String(m.marketAppId)}" title="Copy Market ID">${COPY_SVG}</button>
+        ${vol ? `<span class="aa-mc-vol">${esc(vol)}</span>` : ""}
+        ${endsLabel ? `<span class="aa-mc-end">${esc(endsLabel)}</span>` : ""}
+        <button class="aa-copy-inline" data-copy="${esc(String(m.marketAppId))}" title="Copy Market ID">${COPY_SVG}</button>
       </div>
     </div>`;
 }
@@ -312,7 +313,7 @@ function renderPage() {
 	if (filteredMarkets.length > PAGE_SIZE) {
 		paginationEl.innerHTML = `
       <button class="aa-page-btn" id="aa-prev" ${currentPage === 0 ? "disabled" : ""}>${BACK_SVG} Prev</button>
-      <span class="aa-page-info">${currentPage + 1} / ${totalPages}</span>
+      <span class="aa-page-info">${esc(currentPage + 1)} / ${esc(totalPages)}</span>
       <button class="aa-page-btn" id="aa-next" ${currentPage >= totalPages - 1 ? "disabled" : ""}>Next <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>`;
 		paginationEl.querySelector("#aa-prev")?.addEventListener("click", () => {
 			if (currentPage > 0) {
@@ -335,7 +336,7 @@ function renderMarkets(markets: MarketEntry[], type: "live" | "reward"): string 
 	const hasApiData = markets.some((m) => m.yesPrice || m.volume || m.image);
 	const categories = getAllCategories(markets);
 	const catOptions = categories
-		.map((c) => `<option value="${c}"${categoryFilter === c ? " selected" : ""}>${c}</option>`)
+		.map((c) => `<option value="${esc(c)}"${categoryFilter === c ? " selected" : ""}>${esc(c)}</option>`)
 		.join("");
 
 	const icon =
@@ -349,11 +350,11 @@ function renderMarkets(markets: MarketEntry[], type: "live" | "reward"): string 
         <div class="aa-icon">${icon}</div>
         <div class="aa-header-text">
           <div class="aa-title">${type === "reward" ? "Reward Markets" : "Live Markets"}</div>
-          <div class="aa-subtitle">${markets.length} market${markets.length !== 1 ? "s" : ""} on Alpha Arcade${hasApiData ? "" : " (on-chain data — set ALPHA_API_KEY for images, volume & prices)"}</div>
+          <div class="aa-subtitle">${esc(markets.length)} market${markets.length !== 1 ? "s" : ""} on Alpha Arcade${hasApiData ? "" : " (on-chain data — set ALPHA_API_KEY for images, volume & prices)"}</div>
         </div>
       </div>
       <div class="list-controls">
-        <input type="text" class="list-filter-input" id="aa-filter" placeholder="Search markets..." value="${filterQuery}">
+        <input type="text" class="list-filter-input" id="aa-filter" placeholder="Search markets..." value="${esc(filterQuery)}">
         ${
 			categories.length > 0
 				? `
@@ -391,14 +392,14 @@ function renderDetailOrderRow(o: OrderEntry): string {
 			: `<span class="aa-badge aa-badge-sell">SELL</span>`;
 
 	return `
-    <div class="aa-row aa-detail-order-row" data-escrow="${o.escrowAppId}" style="cursor:pointer">
+    <div class="aa-row aa-detail-order-row" data-escrow="${esc(o.escrowAppId)}" style="cursor:pointer">
       <div class="aa-row-info">
-        <div class="aa-row-title">Escrow ${o.escrowAppId}</div>
-        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${o.quantity} · Filled: ${o.filled}</span></div>
+        <div class="aa-row-title">Escrow ${esc(o.escrowAppId)}</div>
+        <div class="aa-row-sub">${posBadge}${sideBadge}<span style="font-size:10px">Qty: ${esc(o.quantity)} · Filled: ${esc(o.filled)}</span></div>
       </div>
       <div class="aa-row-right">
-        <span class="aa-row-price">${o.price}</span>
-        <span class="aa-row-vol">Rem: ${o.remaining}</span>
+        <span class="aa-row-price">${esc(o.price)}</span>
+        <span class="aa-row-vol">Rem: ${esc(o.remaining)}</span>
       </div>
     </div>`;
 }
@@ -409,8 +410,8 @@ function renderDetailPositionHtml(): string {
 	<div class="aa-position-section">
 		<div class="aa-trade-label">Your Position</div>
 		<div style="display:flex;gap:8px;padding:4px 0">
-			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${detailMarketPosition.yesBalance}</span></div>
-			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${detailMarketPosition.noBalance}</span></div>
+			<div class="aa-pos-badge aa-pos-yes"><span class="aa-pos-label">YES</span> <span class="aa-pos-val">${esc(detailMarketPosition.yesBalance)}</span></div>
+			<div class="aa-pos-badge aa-pos-no"><span class="aa-pos-label">NO</span> <span class="aa-pos-val">${esc(detailMarketPosition.noBalance)}</span></div>
 		</div>
 	</div>`;
 }
@@ -425,7 +426,7 @@ function renderDetailOrdersSection(): string {
     </div>`;
 	}
 	return `${posHtml}<div class="aa-orders-section">
-    <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${detailOpenOrders.length})</span></div>
+    <div class="aa-trade-label">Your Orders <span style="font-weight:500;text-transform:none;letter-spacing:0;font-size:11px;color:var(--color-text-secondary,#94a3b8)">(${esc(detailOpenOrders.length)})</span></div>
     <div id="aa-detail-orders-list">${detailOpenOrders.map(renderDetailOrderRow).join("")}</div>
   </div>`;
 }
@@ -453,42 +454,42 @@ function renderDetailOrderDetailView(o: OrderEntry): string {
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Order Detail</div>
-          <div class="aa-subtitle">${posBadge} ${sideBadge} on ${m.title || `Market ${m.marketAppId}`}</div>
+          <div class="aa-subtitle">${posBadge} ${sideBadge} on ${esc(m.title || `Market ${m.marketAppId}`)}</div>
         </div>
       </div>
 
       <div id="aa-detail-order-fields">
         <div class="aa-detail-row">
           <span class="aa-detail-label">Escrow App ID</span>
-          <span class="aa-detail-value">${o.escrowAppId} <button class="aa-copy-inline" data-copy="${o.escrowAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(o.escrowAppId)} <button class="aa-copy-inline" data-copy="${esc(o.escrowAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${m.marketAppId} <button class="aa-copy-inline" data-copy="${m.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(m.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(m.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Position</span>
-          <span class="aa-detail-value">${o.position}</span>
+          <span class="aa-detail-value">${esc(o.position)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Side</span>
-          <span class="aa-detail-value">${o.side}</span>
+          <span class="aa-detail-value">${esc(o.side)}</span>
         </div>
         <div class="aa-detail-row" id="aa-dod-price-row">
           <span class="aa-detail-label">Price</span>
-          <span class="aa-detail-value">${o.price}</span>
+          <span class="aa-detail-value">${esc(o.price)}</span>
         </div>
         <div class="aa-detail-row" id="aa-dod-qty-row">
           <span class="aa-detail-label">Quantity</span>
-          <span class="aa-detail-value">${o.quantity}</span>
+          <span class="aa-detail-value">${esc(o.quantity)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Filled</span>
-          <span class="aa-detail-value">${o.filled}</span>
+          <span class="aa-detail-value">${esc(o.filled)}</span>
         </div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Remaining</span>
-          <span class="aa-detail-value">${o.remaining}</span>
+          <span class="aa-detail-value">${esc(o.remaining)}</span>
         </div>
       </div>
 
@@ -512,7 +513,7 @@ function showDetailOrderEditMode() {
 		priceRow.innerHTML = `
       <span class="aa-detail-label">Price</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-dedit-price" value="${priceVal.toFixed(2)}" step="0.01" min="0.01" max="0.99">
+        <input type="number" class="aa-edit-input" id="aa-dedit-price" value="${esc(priceVal.toFixed(2))}" step="0.01" min="0.01" max="0.99">
       </span>`;
 	}
 	const qtyRow = root.querySelector("#aa-dod-qty-row");
@@ -520,7 +521,7 @@ function showDetailOrderEditMode() {
 		qtyRow.innerHTML = `
       <span class="aa-detail-label">Quantity</span>
       <span class="aa-detail-value aa-edit-field">
-        <input type="number" class="aa-edit-input" id="aa-dedit-qty" value="${qtyVal.toFixed(2)}" step="0.1" min="0.1">
+        <input type="number" class="aa-edit-input" id="aa-dedit-qty" value="${esc(qtyVal.toFixed(2))}" step="0.1" min="0.1">
       </span>`;
 	}
 	const actionArea = root.querySelector("#aa-dorder-action-area");
@@ -547,10 +548,10 @@ function cancelDetailEditMode() {
 	const o = detailSelectedOrder;
 	const priceRow = root.querySelector("#aa-dod-price-row");
 	if (priceRow)
-		priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${o.price}</span>`;
+		priceRow.innerHTML = `<span class="aa-detail-label">Price</span><span class="aa-detail-value">${esc(o.price)}</span>`;
 	const qtyRow = root.querySelector("#aa-dod-qty-row");
 	if (qtyRow)
-		qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${o.quantity}</span>`;
+		qtyRow.innerHTML = `<span class="aa-detail-label">Quantity</span><span class="aa-detail-value">${esc(o.quantity)}</span>`;
 	const actionArea = root.querySelector("#aa-dorder-action-area");
 	if (actionArea) actionArea.innerHTML = "";
 	const editBtn = root.querySelector("#aa-dorder-edit") as HTMLButtonElement | null;
@@ -582,11 +583,11 @@ async function confirmDetailAmend() {
 			| { text?: string }
 			| undefined;
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order amended!"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order amended!")}</div>`;
 		detailIsEditing = false;
 	} catch (err: any) {
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to amend"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to amend")}</div>`;
 	}
 }
 
@@ -612,10 +613,10 @@ async function cancelDetailOrder() {
 			| { text?: string }
 			| undefined;
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Order cancelled!"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Order cancelled!")}</div>`;
 	} catch (err: any) {
 		if (actionArea)
-			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Failed to cancel"}</div>`;
+			actionArea.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Failed to cancel")}</div>`;
 		if (cancelBtn) cancelBtn.disabled = false;
 	}
 }
@@ -723,7 +724,7 @@ function probToMicro(prob?: number): number {
 
 function renderDetailView(m: MarketDetail): string {
 	const statusBadge = m.isResolved
-		? `<span class="aa-badge aa-badge-resolved">Resolved${m.resolvedOutcome ? ` — ${m.resolvedOutcome}` : ""}</span>`
+		? `<span class="aa-badge aa-badge-resolved">Resolved${m.resolvedOutcome ? ` — ${esc(m.resolvedOutcome)}` : ""}</span>`
 		: `<span class="aa-badge aa-badge-live">Live</span>`;
 
 	const endDate = m.endTs
@@ -737,7 +738,7 @@ function renderDetailView(m: MarketDetail): string {
 		: "—";
 
 	const catHtml = m.categories?.length
-		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${c}</span>`).join(" ")
+		? m.categories.map((c) => `<span class="aa-badge aa-badge-source">${esc(c)}</span>`).join(" ")
 		: "";
 
 	const optionsHtml = m.options?.length
@@ -746,8 +747,8 @@ function renderDetailView(m: MarketDetail): string {
 			.map(
 				(o) => `
          <div class="aa-detail-row">
-           <span class="aa-detail-label">${o.title}</span>
-           <span class="aa-detail-value">${o.marketAppId} <button class="aa-copy-inline" data-copy="${o.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+           <span class="aa-detail-label">${esc(o.title)}</span>
+           <span class="aa-detail-value">${esc(o.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(o.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
          </div>`,
 			)
 			.join("")}
@@ -755,16 +756,16 @@ function renderDetailView(m: MarketDetail): string {
 		: "";
 
 	const rewardsHtml = m.totalRewards
-		? `<div class="aa-detail-row"><span class="aa-detail-label">Total Rewards</span><span class="aa-detail-value">$${m.totalRewards.toFixed(2)}</span></div>
-       <div class="aa-detail-row"><span class="aa-detail-label">Rewards Paid</span><span class="aa-detail-value">$${(m.rewardsPaidOut || 0).toFixed(2)}</span></div>`
+		? `<div class="aa-detail-row"><span class="aa-detail-label">Total Rewards</span><span class="aa-detail-value">$${esc(m.totalRewards.toFixed(2))}</span></div>
+       <div class="aa-detail-row"><span class="aa-detail-label">Rewards Paid</span><span class="aa-detail-value">$${esc((m.rewardsPaidOut || 0).toFixed(2))}</span></div>`
 		: "";
 
 	const displayTitle = m.title || `Market ${m.marketAppId}`;
 	const firstLetter = displayTitle.charAt(0).toUpperCase();
 	const color = getMarketColor(displayTitle);
 	const detailIconHtml = m.image
-		? `<img class="aa-mc-img" src="${m.image}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${color};display:none">${firstLetter}</div>`
-		: `<div class="aa-mc-icon-fallback" style="background:${color}">${firstLetter}</div>`;
+		? `<img class="aa-mc-img" src="${esc(m.image)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="aa-mc-icon-fallback" style="background:${esc(color)};display:none">${esc(firstLetter)}</div>`
+		: `<div class="aa-mc-icon-fallback" style="background:${esc(color)}">${esc(firstLetter)}</div>`;
 
 	return `
     <div class="aa-card aa-card-full">
@@ -772,35 +773,35 @@ function renderDetailView(m: MarketDetail): string {
       <div class="aa-header">
         <div class="aa-mc-icon-wrap">${detailIconHtml}</div>
         <div class="aa-header-text">
-          <div class="aa-title">${displayTitle}</div>
+          <div class="aa-title">${esc(displayTitle)}</div>
           <div class="aa-subtitle">${statusBadge} ${catHtml}</div>
         </div>
       </div>
 
-      ${m.description ? `<div style="font-size:13px;color:var(--color-text-secondary,#64748b);line-height:1.5;padding:4px 0">${m.description}</div>` : ""}
+      ${m.description ? `<div style="font-size:13px;color:var(--color-text-secondary,#64748b);line-height:1.5;padding:4px 0">${esc(m.description)}</div>` : ""}
 
       <div class="aa-pct-panels">
         <div class="aa-pct-panel aa-pct-yes">
           <div class="aa-pct-panel-label">Yes</div>
-          <div class="aa-pct-panel-val">${formatDetailPrice(m.yesProb)}</div>
+          <div class="aa-pct-panel-val">${esc(formatDetailPrice(m.yesProb))}</div>
         </div>
         <div class="aa-pct-panel aa-pct-no">
           <div class="aa-pct-panel-label">No</div>
-          <div class="aa-pct-panel-val">${formatDetailPrice(m.noProb)}</div>
+          <div class="aa-pct-panel-val">${esc(formatDetailPrice(m.noProb))}</div>
         </div>
       </div>
 
       <div>
         <div class="aa-detail-row">
           <span class="aa-detail-label">Market App ID</span>
-          <span class="aa-detail-value">${m.marketAppId} <button class="aa-copy-inline" data-copy="${m.marketAppId}" title="Copy">${COPY_SVG}</button></span>
+          <span class="aa-detail-value">${esc(m.marketAppId)} <button class="aa-copy-inline" data-copy="${esc(m.marketAppId)}" title="Copy">${COPY_SVG}</button></span>
         </div>
-        ${m.yesAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">YES Asset ID</span><span class="aa-detail-value">${m.yesAssetId} <button class="aa-copy-inline" data-copy="${m.yesAssetId}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
-        ${m.noAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">NO Asset ID</span><span class="aa-detail-value">${m.noAssetId} <button class="aa-copy-inline" data-copy="${m.noAssetId}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
-        ${m.volume != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Volume</span><span class="aa-detail-value">$${m.volume.toFixed(2)}</span></div>` : ""}
-        <div class="aa-detail-row"><span class="aa-detail-label">Ends</span><span class="aa-detail-value">${endDate}</span></div>
-        ${m.source ? `<div class="aa-detail-row"><span class="aa-detail-label">Source</span><span class="aa-detail-value">${m.source}</span></div>` : ""}
-        ${m.feeBase != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Fee</span><span class="aa-detail-value">${m.feeBase}%</span></div>` : ""}
+        ${m.yesAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">YES Asset ID</span><span class="aa-detail-value">${esc(m.yesAssetId)} <button class="aa-copy-inline" data-copy="${esc(m.yesAssetId)}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
+        ${m.noAssetId ? `<div class="aa-detail-row"><span class="aa-detail-label">NO Asset ID</span><span class="aa-detail-value">${esc(m.noAssetId)} <button class="aa-copy-inline" data-copy="${esc(m.noAssetId)}" title="Copy">${COPY_SVG}</button></span></div>` : ""}
+        ${m.volume != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Volume</span><span class="aa-detail-value">$${esc(m.volume.toFixed(2))}</span></div>` : ""}
+        <div class="aa-detail-row"><span class="aa-detail-label">Ends</span><span class="aa-detail-value">${esc(endDate)}</span></div>
+        ${m.source ? `<div class="aa-detail-row"><span class="aa-detail-label">Source</span><span class="aa-detail-value">${esc(m.source)}</span></div>` : ""}
+        ${m.feeBase != null ? `<div class="aa-detail-row"><span class="aa-detail-label">Fee</span><span class="aa-detail-value">${esc(m.feeBase)}%</span></div>` : ""}
         ${rewardsHtml}
       </div>
       ${optionsHtml}
@@ -811,8 +812,8 @@ function renderDetailView(m: MarketDetail): string {
       <div class="aa-trade-section">
         <div class="aa-trade-label">Trade</div>
         <div class="aa-trade-btns">
-          <button class="aa-trade-btn aa-trade-btn-yes-market" data-trade="market" data-pos="1">Buy YES<span class="aa-trade-btn-sub">Market @ ${formatDetailPrice(m.yesProb)}</span></button>
-          <button class="aa-trade-btn aa-trade-btn-no-market" data-trade="market" data-pos="0">Buy NO<span class="aa-trade-btn-sub">Market @ ${formatDetailPrice(m.noProb)}</span></button>
+          <button class="aa-trade-btn aa-trade-btn-yes-market" data-trade="market" data-pos="1">Buy YES<span class="aa-trade-btn-sub">Market @ ${esc(formatDetailPrice(m.yesProb))}</span></button>
+          <button class="aa-trade-btn aa-trade-btn-no-market" data-trade="market" data-pos="0">Buy NO<span class="aa-trade-btn-sub">Market @ ${esc(formatDetailPrice(m.noProb))}</span></button>
         </div>
         <div class="aa-trade-btns" style="margin-top:6px">
           <button class="aa-trade-btn aa-trade-btn-yes-limit" data-trade="limit" data-pos="1">Sell YES<span class="aa-trade-btn-sub">Set price &amp; qty</span></button>
@@ -830,7 +831,7 @@ function renderDetailView(m: MarketDetail): string {
 				? `
       <div class="aa-rules-section">
         <div class="aa-trade-label">Rules</div>
-        <div class="aa-rules-text" id="aa-rules-text">${m.rules.length > 200 ? `${m.rules.slice(0, 200)}...` : m.rules}</div>
+        <div class="aa-rules-text" id="aa-rules-text">${esc(m.rules.length > 200 ? `${m.rules.slice(0, 200)}...` : m.rules)}</div>
         ${m.rules.length > 200 ? `<button class="aa-rules-toggle" id="aa-rules-toggle">Show more</button>` : ""}
       </div>`
 				: ""
@@ -846,9 +847,9 @@ function renderDetailOrderbook(data: OrderbookData): string {
 					.map(
 						(e) => `
 				<tr>
-					<td class="${cls}">${e.price}</td>
-					<td>${e.shares}</td>
-					<td>${e.total}</td>
+					<td class="${esc(cls)}">${esc(e.price)}</td>
+					<td>${esc(e.shares)}</td>
+					<td>${esc(e.total)}</td>
 				</tr>`,
 					)
 					.join("")
@@ -866,7 +867,7 @@ function renderDetailOrderbook(data: OrderbookData): string {
 			<thead><tr><th>Price</th><th>Shares</th><th>Total</th></tr></thead>
 			<tbody>${renderRows(asks, "ob-ask")}</tbody>
 		</table>
-		<div class="ob-spread-row">Last: — &nbsp;&nbsp; Spread: ${spread}</div>
+		<div class="ob-spread-row">Last: — &nbsp;&nbsp; Spread: ${esc(spread)}</div>
 		<div class="ob-section-label ob-section-bids">Bids</div>
 		<table class="ob-table ob-table-compact">
 			<thead><tr><th>Price</th><th>Shares</th><th>Total</th></tr></thead>
@@ -946,11 +947,11 @@ function renderLoading(): string {
 }
 
 function renderErrorWithBack(msg: string): string {
-	return `<div class="aa-card aa-card-full aa-error"><button class="aa-back-btn" id="aa-back-err">${BACK_SVG} Back to Markets</button><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+	return `<div class="aa-card aa-card-full aa-error"><button class="aa-back-btn" id="aa-back-err">${BACK_SVG} Back to Markets</button><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 function renderError(msg: string): string {
-	return `<div class="aa-card aa-card-full aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+	return `<div class="aa-card aa-card-full aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;
@@ -986,7 +987,7 @@ function showTradeForm(type: "market" | "limit", position: 0 | 1) {
 			? `
     <div class="aa-trade-form-row">
       <span class="aa-trade-form-label">Price ($)</span>
-      <input type="number" class="aa-trade-input" id="aa-trade-price" value="${defaultPriceDisplay}" step="0.01" min="0.01" max="0.99">
+      <input type="number" class="aa-trade-input" id="aa-trade-price" value="${esc(defaultPriceDisplay)}" step="0.01" min="0.01" max="0.99">
     </div>`
 			: "";
 
@@ -1067,7 +1068,7 @@ async function executeListTrade(type: "market" | "limit", position: 0 | 1) {
 			const text = result.content?.find((c: any) => c.type === "text") as
 				| { text?: string }
 				| undefined;
-			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Market order submitted!"}</div>`;
+			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Market order submitted!")}</div>`;
 		} else {
 			const priceInput = root.querySelector("#aa-trade-price") as HTMLInputElement | null;
 			const price = Math.round(
@@ -1087,10 +1088,10 @@ async function executeListTrade(type: "market" | "limit", position: 0 | 1) {
 			const text = result.content?.find((c: any) => c.type === "text") as
 				| { text?: string }
 				| undefined;
-			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${text?.text || "Sell order placed!"}</div>`;
+			area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-success">${esc(text?.text || "Sell order placed!")}</div>`;
 		}
 	} catch (err: any) {
-		area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${err.message || "Trade failed"}</div>`;
+		area.innerHTML = `<div class="aa-trade-result-msg aa-trade-result-error">${esc(err.message || "Trade failed")}</div>`;
 	}
 }
 

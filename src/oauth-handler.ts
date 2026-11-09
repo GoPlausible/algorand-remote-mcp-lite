@@ -5,7 +5,13 @@ import type { AuthRequest, OAuthHelpers } from "./oauth-provider";
 import type { Env, Props } from "./types";
 import { handleImageProxyRequest, IMAGE_PROXY_PATH } from "./utils/imageProxy";
 import {
-	clientIdAlreadyApproved,
+	clearFlowCookie,
+	consumeUpstreamState,
+	createConsent,
+	resolveRedirectUri,
+	stateCookieName,
+} from "./utils/oauthFlow";
+import {
 	fetchUpstreamAuthToken,
 	parseRedirectApproval,
 	redirectToProvider,
@@ -33,51 +39,50 @@ interface OAuthEnv {
 
 const app = new Hono<{ Bindings: Env & OAuthEnv }>();
 
-// Middleware to check if the request is authenticated
+/**
+ * OAuth authorization request from an MCP client.
+ * Validates the client and its redirect URI (RFC 6749 §3.1.2), then either redirects to the
+ * provider the user already approved for this client, or renders the consent form.
+ */
 app.get("/authorize", async (c) => {
 	console.log("[OAUTH_HANDLER] Received OAuth authorization request");
-	const clonedRequest = c.req.raw.clone();
-	const url = new URL(clonedRequest.url);
-	const responseType = url.searchParams.get("response_type") || "";
-	const clientId = url.searchParams.get("client_id") || "";
-	const redirectUri = url.searchParams.get("redirect_uri") || "";
-	const scope = (url.searchParams.get("scope") || "").split(" ").filter(Boolean);
-	const state = url.searchParams.get("state") || "";
-	const codeChallenge = url.searchParams.get("code_challenge") || undefined;
-	const codeChallengeMethod = url.searchParams.get("code_challenge_method") || "S256";
-	if (!clientId) {
-		console.error("[OAUTH_HANDLER] Invalid OAuth request: missing clientId");
+	let authReqInfo: AuthRequest;
+	try {
+		// Validates client_id and redirect_uri, and rejects response_type=token (implicit flow is off)
+		authReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
+	} catch (e) {
+		console.warn("[OAUTH_HANDLER] Rejected authorization request:", e instanceof Error ? e.message : e);
+		return c.text("Invalid authorization request", 400);
+	}
+	const client = authReqInfo.clientId
+		? await c.env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId)
+		: null;
+	if (!client) {
+		console.error("[OAUTH_HANDLER] Invalid OAuth request: unknown or missing client_id");
 		return c.text("Invalid request", 400);
 	}
-	console.log("[OAUTH_HANDLER] Parsed OAuth request info for Client ID:", clientId);
-
-	const { approved, provider } = await clientIdAlreadyApproved(
-		c.req.raw,
-		clientId,
-		c.env.COOKIE_ENCRYPTION_KEY || "",
-	);
-	const authReqInfo: AuthRequest = {
-		responseType,
-		clientId,
-		redirectUri,
-		scope,
-		state,
-		codeChallenge,
-		codeChallengeMethod,
-	};
-	if (approved && provider && provider !== "" && authReqInfo) {
-		console.log(
-			`[OAUTH_HANDLER] Client ID ${clientId} already approved, redirecting to ${provider}`,
-		);
-		return redirectToProvider(c, provider, clientId, authReqInfo);
+	if (authReqInfo.responseType !== "code") {
+		return c.text("Unsupported response_type", 400);
 	}
-	console.log(
-		`[OAUTH_HANDLER] Client ID ${clientId} not approved yet, rendering approval dialog`,
-	);
+	const redirectUri = resolveRedirectUri(authReqInfo.redirectUri, client.redirectUris);
+	if (!redirectUri) {
+		return c.text("Invalid redirect_uri", 400);
+	}
+	authReqInfo = { ...authReqInfo, redirectUri };
+	const clientId = authReqInfo.clientId;
+	console.log("[OAUTH_HANDLER] Validated OAuth request for Client ID:", clientId);
 
-	console.log("[OAUTH_HANDLER] Rendering approval dialog with auth request info:", authReqInfo);
+	// Remembered approvals are parked (see parseRedirectApproval in workers-oauth-utils.ts):
+	// consent is asked on every authorization.
+	// const { approved, provider } = await clientIdAlreadyApproved(c.req.raw, clientId, c.env.COOKIE_ENCRYPTION_KEY || "");
+	// if (approved && isOAuthProvider(provider)) {
+	// 	return redirectToProvider(c, provider, authReqInfo);
+	// }
+	console.log(`[OAUTH_HANDLER] Rendering approval dialog for Client ID ${clientId}`);
+
+	const consent = await createConsent(c.env.CODE_VERIFIER_KV, authReqInfo);
 	return renderApprovalDialog(c.req.raw, {
-		client: await c.env.OAUTH_PROVIDER.lookupClient(clientId),
+		client,
 		server: {
 			description:
 				"Algorand MCP Remote Server Authentication using OAuth 2 protocol. Supports Google, GitHub, Twitter, and LinkedIn.",
@@ -88,37 +93,31 @@ app.get("/authorize", async (c) => {
 			logo: getLogo(),
 		},
 
-		state: { provider: provider, clientId: clientId, authReqInfo: authReqInfo as AuthRequest },
+		consentToken: consent.token,
+		setCookie: consent.setCookie,
 	});
 });
 
 /**
- * OAuth Authorization Endpoint
- *
- * This route handles the initial authorization request from the client.
- * It checks if the client ID is already approved and redirects to the
- * appropriate provider or renders the approval dialog.
+ * Consent form submission.
+ * Accepted only from the browser that was shown the form (consent token + cookie, one-time);
+ * the authorization request comes from the server-side record, never from the form.
  */
 app.post("/authorize", async (c) => {
-	const clonedReq = c.req.raw.clone();
-	const formData = await c.req.formData();
-	const provider = formData.get("provider");
-	console.log(`[OAUTH_HANDLER] Selected provider: ${provider}`);
-
-	const { state, headers } = await parseRedirectApproval(
-		clonedReq,
-		c.env.COOKIE_ENCRYPTION_KEY || "",
-	);
-
-	console.log("[OAUTH_HANDLER] Parsed state from form submission:", state);
-	const authReqInfo: AuthRequest = state.authReqInfo as AuthRequest;
-	if (!state.clientId) {
-		console.error("[OAUTH_HANDLER] Invalid state in OAuth approval request! No Client Id");
-		return c.text("Invalid request", 400);
+	let approval: Awaited<ReturnType<typeof parseRedirectApproval>>;
+	try {
+		approval = await parseRedirectApproval(c.req.raw, c.env);
+	} catch (e) {
+		console.warn("[OAUTH_HANDLER] Rejected consent submission:", e instanceof Error ? e.message : e);
+		return c.text(
+			"This sign-in request has expired or was not started in this browser. Please start the connection again from your MCP client.",
+			403,
+		);
 	}
-	console.log("[OAUTH_HANDLER] Processing OAuth approval request with state:", state.clientId);
-
-	return redirectToProvider(c, provider as string, state.clientId, authReqInfo, headers);
+	console.log(
+		`[OAUTH_HANDLER] Consent given for Client ID ${approval.authReqInfo.clientId} with provider ${approval.provider}`,
+	);
+	return redirectToProvider(c, approval.provider, approval.authReqInfo, approval.setCookies);
 });
 
 /**
@@ -130,16 +129,18 @@ app.post("/authorize", async (c) => {
  * down to the client. It ends by redirecting the client back to _its_ callback URL
  */
 app.get("/callback", async (c) => {
-	// Get the oathReqInfo out of KV
 	console.log("[OAUTH_HANDLER] Received OAuth callback request");
-	const stateData = JSON.parse(atob(c.req.query("state") as string));
-	console.log("[OAUTH_HANDLER] Parsed state data from query:", stateData);
-
-	const provider = stateData.provider;
-
-	if (!provider || provider === "") {
-		return c.text("Invalid state", 400);
+	// Accept only a state this browser started (state cookie), that exists and is unused
+	const state = c.req.query("state");
+	const flow = await consumeUpstreamState(c.env.CODE_VERIFIER_KV, c.req.raw, state);
+	if (!flow || !state) {
+		console.warn("[OAUTH_HANDLER] Rejected callback: unknown, expired, reused or foreign state");
+		return c.text(
+			"This sign-in session has expired or was not started in this browser. Please start the connection again from your MCP client.",
+			400,
+		);
 	}
+	const { provider, authReqInfo } = flow;
 	console.log(
 		`[OAUTH_HANDLER] OAuth callback received from ${provider} with provider:`,
 		provider,
@@ -157,9 +158,6 @@ app.get("/callback", async (c) => {
 	let tokenUrl = "";
 	let userInfoUrl = "";
 	let redirectUri = "";
-	const pkce: any = await c.env.CODE_VERIFIER_KV.get(`pkce:${stateData.clientId}`, {
-		type: "json",
-	});
 	switch (provider) {
 		case "github":
 			clientId = c.env.GITHUB_CLIENT_ID || "";
@@ -176,13 +174,8 @@ app.get("/callback", async (c) => {
 			userInfoUrl = "https://api.x.com/2/users/me";
 			// redirectUri = new URL("/callback", c.req.url).href;
 
-			console.log("[OAUTH_HANDLER] Retrieved PKCE data for Twitter:", pkce);
-			if (!pkce?.codeVerifier || !pkce?.upstreamRedirectUri) {
-				console.error(
-					"[OAUTH_HANDLER] Missing PKCE for Twitter state:",
-					stateData.authReqInfo,
-					pkce,
-				);
+			if (!flow.codeVerifier) {
+				console.error("[OAUTH_HANDLER] Missing PKCE verifier for Twitter flow");
 				return c.text("Twitter session expired or PKCE missing", 400);
 			}
 			//redirectUri = pkce.upstreamRedirectUri;
@@ -211,7 +204,7 @@ app.get("/callback", async (c) => {
 		grantType: "authorization_code",
 		redirectUri,
 		upstreamUrl: tokenUrl,
-		codeVerifier: provider === "twitter" ? pkce.codeVerifier : undefined,
+		codeVerifier: provider === "twitter" ? flow.codeVerifier : undefined,
 	});
 
 	if (errorResponse) {
@@ -341,11 +334,19 @@ app.get("/callback", async (c) => {
 	console.log(`[OAUTH_HANDLER] Successfully fetched user info from ${provider}: `, {
 		id,
 		name,
-		clientId: stateData.clientId,
+		clientId: authReqInfo.clientId,
 		email,
 	});
-	const scope = stateData.authReqInfo.scope;
+	const scope = authReqInfo.scope;
 	console.log(`[OAUTH_HANDLER] OAuth scope requested: ${scope}`);
+
+	// Check once more, right before issuing the code, that the redirect URI is still
+	// registered for this client (RFC 6749 §3.1.2.4)
+	const client = await c.env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId);
+	if (!client || !client.redirectUris.includes(authReqInfo.redirectUri)) {
+		return c.text("Invalid redirect_uri", 400);
+	}
+
 	// Return back to the MCP client a new token
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {
@@ -358,14 +359,17 @@ app.get("/callback", async (c) => {
 			name,
 			provider, // Store the provider in props
 			id, // User ID
-			clientId: stateData.clientId, // Client ID for OAuth
+			clientId: authReqInfo.clientId, // Client ID for OAuth
 		} as Props,
-		request: stateData.authReqInfo as AuthRequest,
+		request: authReqInfo,
 		scope: scope,
 		userId: id,
 	});
 
-	return Response.redirect(redirectTo);
+	return new Response(null, {
+		status: 302,
+		headers: { Location: redirectTo, "Set-Cookie": clearFlowCookie(stateCookieName(state)) },
+	});
 });
 
 /**

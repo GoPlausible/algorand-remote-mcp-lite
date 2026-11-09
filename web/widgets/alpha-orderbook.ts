@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import "./alpha-common.css";
+import { esc } from "./alpha-escape";
 
 interface OrderEntry {
   price: string;
@@ -47,10 +48,10 @@ function renderOrderbook(data: OrderbookData): string {
     entries.length > 0
       ? entries.map((e) => `
           <tr>
-            <td class="${cls}">${e.price}</td>
-            <td>${e.shares}</td>
-            <td>${e.total}</td>
-            <td style="font-size:10px;color:var(--color-text-secondary,#94a3b8)">${truncAddr(e.owner)} <button class="aa-copy-inline" data-copy="${e.owner}" title="Copy owner">${COPY_SVG}</button></td>
+            <td class="${esc(cls)}">${esc(e.price)}</td>
+            <td>${esc(e.shares)}</td>
+            <td>${esc(e.total)}</td>
+            <td style="font-size:10px;color:var(--color-text-secondary,#94a3b8)">${esc(truncAddr(e.owner))} <button class="aa-copy-inline" data-copy="${esc(e.owner)}" title="Copy owner">${COPY_SVG}</button></td>
           </tr>`).join("")
       : `<tr><td colspan="4" style="text-align:center;color:var(--color-text-secondary,#94a3b8);padding:12px">No orders</td></tr>`;
 
@@ -64,7 +65,7 @@ function renderOrderbook(data: OrderbookData): string {
         </div>
         <div class="aa-header-text">
           <div class="aa-title">Orderbook</div>
-          <div class="aa-subtitle">Market ${data.marketAppId} &middot; ${data.totalOrders} orders</div>
+          <div class="aa-subtitle">Market ${esc(data.marketAppId)} &middot; ${esc(data.totalOrders)} orders</div>
         </div>
       </div>
 
@@ -74,7 +75,7 @@ function renderOrderbook(data: OrderbookData): string {
         <tbody>${renderRows(asks, "ob-ask")}</tbody>
       </table>
 
-      <div class="ob-spread-row">Spread: ${spread}</div>
+      <div class="ob-spread-row">Spread: ${esc(spread)}</div>
 
       <div class="ob-section-label ob-section-bids">Bids (Buy)</div>
       <table class="ob-table">
@@ -89,7 +90,7 @@ function renderLoading(): string {
 }
 
 function renderError(msg: string): string {
-  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${msg}</div></div>`;
+  return `<div class="aa-card aa-error"><div class="aa-error-icon">!</div><div class="aa-error-text">${esc(msg)}</div></div>`;
 }
 
 const root = document.getElementById("root")!;
