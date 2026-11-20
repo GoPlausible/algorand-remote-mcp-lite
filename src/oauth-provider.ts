@@ -1,5 +1,9 @@
+// dOAuth protocol master copy (D2, 2026-11-20). This file is shared, byte for byte, by every server
+// that implements dOAuth on the shared token store: doauth.org (client-worker, the master), and the
+// algorand-remote-mcp and algorand-remote-mcp-lite servers (synced copies). Edit it only in
+// doauth/client-worker/src/oauth-provider.ts, then run doauth's scripts/sync-oauth-provider.mjs.
+// Server-specific behavior goes into OAuthProviderOptions, never into edits of a copy.
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { redirectUriProblem } from './utils/oauthFlow';
 
 // Types
 
@@ -182,6 +186,20 @@ export interface OAuthProviderOptions {
   disallowPublicClientRegistration?: boolean;
 
   /**
+   * Local modification (dOAuth): grants created before this Unix time (seconds) are refused at
+   * refresh and deleted, so the user must log in again. Retires grants issued under superseded
+   * login rules. Unset means no cutoff.
+   */
+  grantsIssuedBefore?: number;
+
+  /**
+   * Local modification (dOAuth): extra query parameters a server adds to the client's redirect URL
+   * when it issues an authorization code. doauth.org's landing page reads `provider`, `name` and
+   * `id`; the MCP servers add `client`. Empty values are skipped. Unset means none.
+   */
+  clientRedirectParams?: (props: any, request: AuthRequest) => Record<string, string | undefined>;
+
+  /**
    * Optional callback function that is called during token exchange.
    * This allows updating the props stored in both the access token and the grant.
    * For example, if the application itself is also a client to some other OAuth API,
@@ -217,9 +235,12 @@ export interface OAuthProviderOptions {
  */
 export interface OAuthHelpers {
   /**
-   * Parses an OAuth authorization request from the HTTP request
+   * Parses and validates an OAuth authorization request from the HTTP request:
+   * the client must exist, the redirect URI must be one it registered, and the
+   * response type and PKCE method must be supported and allowed for the client.
    * @param request - The HTTP request containing OAuth parameters
    * @returns The parsed authorization request parameters
+   * @throws AuthRequestError when the request is invalid
    */
   parseAuthRequest(request: Request): Promise<AuthRequest>;
 
@@ -284,18 +305,33 @@ export interface OAuthHelpers {
   revokeGrant(grantId: string, userId: string): Promise<void>;
 
   /**
-   * Validates an access token issued by this provider (same checks as API requests) and
-   * returns who it belongs to, with its decrypted props. Returns null for unknown, malformed
-   * or expired tokens.
-   * @param token - The access token string
+   * Validates an access token issued by this provider and decrypts its props.
+   * Performs the same checks as API-route authentication: format, existence in KV, expiry.
+   * @param token - The bearer access token (`userId:grantId:secret`)
+   * @returns The token's owner, grant, client and decrypted props, or null if the token is not valid
    */
-  unwrapToken(token: string): Promise<TokenSummary | null>;
+  unwrapToken(token: string): Promise<UnwrappedToken | null>;
 }
 
 /**
- * Owner and props of a valid access token, as returned by OAuthHelpers.unwrapToken
+ * An invalid authorization request. It is shown to the user and never redirected: registration
+ * is open, so no redirect URI is trusted, and RFC 9700 §4.11.2 forbids redirecting before the
+ * user has authenticated (anything else makes /authorize an open redirector).
  */
-export interface TokenSummary {
+export class AuthRequestError extends Error {
+  readonly error: string;
+
+  constructor(error: string, description: string) {
+    super(description);
+    this.name = 'AuthRequestError';
+    this.error = error;
+  }
+}
+
+/**
+ * Result of a successful access token validation
+ */
+export interface UnwrappedToken {
   userId: string;
   grantId: string;
   clientId: string;
@@ -342,13 +378,6 @@ export interface AuthRequest {
    * PKCE code challenge method (plain or S256)
    */
   codeChallengeMethod?: string;
-
-  /**
-   * Whether redirect_uri was present in the authorization request (rather than resolved from
-   * the client's single registered URI). When true, the token request must repeat the identical
-   * redirect_uri (RFC 6749 §4.1.3).
-   */
-  redirectUriInRequest?: boolean;
 }
 
 /**
@@ -549,9 +578,8 @@ export interface Grant {
   codeChallengeMethod?: string;
 
   /**
-   * redirect_uri of the authorization request, when it was included there; the token request
-   * must then repeat it identically (RFC 6749 §4.1.3).
-   * Only present during the authorization code exchange process
+   * The redirect URI the authorization code was sent to (RFC 6749 §4.1.3).
+   * Absent on grants created before dOAuth recorded it.
    */
   redirectUri?: string;
 }
@@ -895,6 +923,9 @@ class OAuthProviderImpl {
     if (this.isTokenEndpoint(url)) {
       console.log('[OAUTH_PROVIDER] Handling token endpoint request');
       const parsed = await this.parseTokenEndpointRequest(request, env);
+      console.log('[OAUTH_PROVIDER] Parsed token endpoint request:', parsed instanceof Response
+        ? { status: parsed.status }
+        : { grantType: parsed.body?.grant_type, isRevocationRequest: parsed.isRevocationRequest, clientId: parsed.clientInfo?.clientId });
       // If parsing failed, return the error response
       if (parsed instanceof Response) {
         return this.addCorsHeaders(parsed, request);
@@ -941,11 +972,12 @@ class OAuthProviderImpl {
         env,
         ctx
       );
+    } else {
+      // It's a WorkerEntrypoint class - instantiate it with ctx and env in that order
+      console.log('[OAUTH_PROVIDER] Instantiating WorkerEntrypoint default handler');
+      const handler = new this.typedDefaultHandler.handler(ctx, env);
+      return handler.fetch(request);
     }
-    // It's a WorkerEntrypoint class - instantiate it with ctx and env in that order
-    console.log('[OAUTH_PROVIDER] Instantiating WorkerEntrypoint default handler');
-    const handler = new this.typedDefaultHandler.handler(ctx, env);
-    return handler.fetch(request);
   }
 
   /**
@@ -967,10 +999,11 @@ class OAuthProviderImpl {
     if (this.isPath(endpoint)) {
       // It's a path - match only the pathname
       return url.pathname === endpoint;
+    } else {
+      // It's a full URL - match the entire URL including hostname
+      const endpointUrl = new URL(endpoint);
+      return url.hostname === endpointUrl.hostname && url.pathname === endpointUrl.pathname;
     }
-    // It's a full URL - match the entire URL including hostname
-    const endpointUrl = new URL(endpoint);
-    return url.hostname === endpointUrl.hostname && url.pathname === endpointUrl.pathname;
   }
 
   /**
@@ -1013,8 +1046,8 @@ class OAuthProviderImpl {
       return this.createErrorResponse('invalid_request', 'Method not allowed', 405);
     }
 
-    const contentType = request.headers.get('Content-Type') || '';
-    const body: any = {};
+    let contentType = request.headers.get('Content-Type') || '';
+    let body: any = {};
 
     // According to OAuth 2.0 RFC 6749/7009, requests MUST use application/x-www-form-urlencoded
     if (!contentType.includes('application/x-www-form-urlencoded')) {
@@ -1032,7 +1065,7 @@ class OAuthProviderImpl {
     let clientId = '';
     let clientSecret = '';
 
-    if (authHeader?.startsWith('Basic ')) {
+    if (authHeader && authHeader.startsWith('Basic ')) {
       // Basic auth
       const credentials = atob(authHeader.substring(6));
       const [id, secret] = credentials.split(':', 2);
@@ -1049,6 +1082,7 @@ class OAuthProviderImpl {
     }
 
     // Verify client exists
+    console.log(`[OAUTH_PROVIDER] Looking up client ID: ${clientId}`);
     const clientInfo = await this.getClient(env, clientId);
     if (!clientInfo) {
       return this.createErrorResponse('invalid_client', 'Client not found', 401);
@@ -1099,10 +1133,11 @@ class OAuthProviderImpl {
     if (this.isPath(route)) {
       // It's a path - match only the pathname
       return url.pathname.startsWith(route);
+    } else {
+      // It's a full URL - match the entire URL including hostname
+      const apiUrl = new URL(route);
+      return url.hostname === apiUrl.hostname && url.pathname.startsWith(apiUrl.pathname);
     }
-    // It's a full URL - match the entire URL including hostname
-    const apiUrl = new URL(route);
-    return url.hostname === apiUrl.hostname && url.pathname.startsWith(apiUrl.pathname);
   }
 
   /**
@@ -1146,9 +1181,10 @@ class OAuthProviderImpl {
     if (this.isPath(endpoint)) {
       // It's a path - use the request URL's origin
       return `${requestUrl.origin}${endpoint}`;
+    } else {
+      // It's already a full URL
+      return endpoint;
     }
-    // It's already a full URL
-    return endpoint;
   }
 
   /**
@@ -1228,7 +1264,7 @@ class OAuthProviderImpl {
       // not implemented: introspection_endpoint
       // not implemented: introspection_endpoint_auth_methods_supported
       // not implemented: introspection_endpoint_auth_signing_alg_values_supported
-      code_challenge_methods_supported: ['S256'], // PKCE: S256 only
+      code_challenge_methods_supported: ['S256'], // PKCE is required, with S256 only
     };
 
     return new Response(JSON.stringify(metadata), {
@@ -1250,11 +1286,11 @@ class OAuthProviderImpl {
 
     if (grantType === 'authorization_code') {
       return this.handleAuthorizationCodeGrant(body, clientInfo, env);
-    }
-    if (grantType === 'refresh_token') {
+    } else if (grantType === 'refresh_token') {
       return this.handleRefreshTokenGrant(body, clientInfo, env);
+    } else {
+      return this.createErrorResponse('unsupported_grant_type', 'Grant type not supported');
     }
-    return this.createErrorResponse('unsupported_grant_type', 'Grant type not supported');
   }
 
   /**
@@ -1266,6 +1302,7 @@ class OAuthProviderImpl {
    * @returns Response with token data or error
    */
   private async handleAuthorizationCodeGrant(body: any, clientInfo: ClientInfo, env: any): Promise<Response> {
+    console.log('[OAUTH_PROVIDER] Handling authorization_code grant');
     const code = body.code;
     const redirectUri = body.redirect_uri;
     const codeVerifier = body.code_verifier;
@@ -1306,30 +1343,14 @@ class OAuthProviderImpl {
       return this.createErrorResponse('invalid_grant', 'Client ID mismatch');
     }
 
-    // OAuth 2.1 §4.1.3: reject the token request if the authorization request had no
-    // code_challenge (the grant is not valid under this server's rules: RFC 6749 §5.2 invalid_grant)
+    // PKCE with S256 is required for every code (dOAuth protocol rule, 2026-11-20; OAuth 2.1 §4.1.1,
+    // RFC 9700 §2.1.1). A code issued without it, or with another method, is not valid under these
+    // rules (RFC 6749 §5.2 invalid_grant).
     if (!grantData.codeChallenge) {
       return this.createErrorResponse('invalid_grant', 'Authorization code was issued without PKCE');
     }
-
-    // RFC 6749 §4.1.3: when redirect_uri was included in the authorization request, the token
-    // request must include it and the two values must be identical. RFC 6749 §5.2: a missing
-    // required parameter is invalid_request, a mismatching redirect URI is invalid_grant.
-    if (grantData.redirectUri !== undefined) {
-      if (!redirectUri) {
-        return this.createErrorResponse('invalid_request', 'redirect_uri is required');
-      }
-      if (redirectUri !== grantData.redirectUri) {
-        return this.createErrorResponse('invalid_grant', 'redirect_uri does not match the authorization request');
-      }
-    }
-
-    // Check if PKCE is being used
-    const isPkceEnabled = !!grantData.codeChallenge;
-
-    // OAuth 2.1 requires redirect_uri parameter unless PKCE is used
-    if (!redirectUri && !isPkceEnabled) {
-      return this.createErrorResponse('invalid_request', 'redirect_uri is required when not using PKCE');
+    if (grantData.codeChallengeMethod !== 'S256') {
+      return this.createErrorResponse('invalid_grant', 'Unsupported PKCE code_challenge_method');
     }
 
     // Verify redirect URI if provided
@@ -1337,37 +1358,21 @@ class OAuthProviderImpl {
       return this.createErrorResponse('invalid_grant', 'Invalid redirect URI');
     }
 
-    // Reject if code_verifier is provided but PKCE wasn't used in authorization
-    if (!isPkceEnabled && codeVerifier) {
-      return this.createErrorResponse('invalid_request', 'code_verifier provided for a flow that did not use PKCE');
+    // A redirect_uri sent here must be the one the code was issued for (RFC 6749 §4.1.3). Sending it
+    // is optional: OAuth 2.1 (draft 17, §10.2) dropped RFC 6749's requirement, since PKCE, required
+    // above, binds the code to the client that asked for it.
+    if (redirectUri && grantData.redirectUri && redirectUri !== grantData.redirectUri) {
+      return this.createErrorResponse('invalid_grant', 'redirect_uri does not match the authorization request');
     }
 
-    // Verify PKCE code_verifier if code_challenge was provided during authorization
-    if (isPkceEnabled) {
-      if (!codeVerifier) {
-        return this.createErrorResponse('invalid_request', 'code_verifier is required for PKCE');
-      }
-
-      // Verify the code verifier against the stored code challenge
-      let calculatedChallenge: string;
-
-      if (grantData.codeChallengeMethod === 'S256') {
-        console.log('[OAUTH_PROVIDER] Verifying PKCE code_verifier using S256 method');
-        // SHA-256 transformation for S256 method
-        const encoder = new TextEncoder();
-        const data = encoder.encode(codeVerifier);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        calculatedChallenge = base64UrlEncode(String.fromCharCode(...hashArray));
-      } else {
-        // Only S256 is supported (decision 2026-11-10; RFC 9700 §2.1.1: S256 is the only method
-        // that does not expose the verifier). Never fall back to plain.
-        return this.createErrorResponse('invalid_grant', 'Unsupported PKCE code_challenge_method');
-      }
-
-      if (calculatedChallenge !== grantData.codeChallenge) {
-        return this.createErrorResponse('invalid_grant', 'Invalid PKCE code_verifier');
-      }
+    // Verify the code verifier against the stored S256 challenge (RFC 7636 §4.6)
+    if (!codeVerifier) {
+      return this.createErrorResponse('invalid_request', 'code_verifier is required for PKCE');
+    }
+    const verifierHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(codeVerifier));
+    const calculatedChallenge = base64UrlEncode(String.fromCharCode(...new Uint8Array(verifierHash)));
+    if (calculatedChallenge !== grantData.codeChallenge) {
+      return this.createErrorResponse('invalid_grant', 'Invalid PKCE code_verifier');
     }
 
     // Code is valid - generate tokens
@@ -1465,11 +1470,11 @@ class OAuthProviderImpl {
     // - Remove auth code wrapped key (no longer needed)
     // - Add the refresh token hash and wrapped key
     // - Make it permanent (no TTL)
-    grantData.authCodeId = undefined;
-    grantData.codeChallenge = undefined;
-    grantData.codeChallengeMethod = undefined;
-    grantData.redirectUri = undefined;
-    grantData.authCodeWrappedKey = undefined;
+    delete grantData.authCodeId;
+    delete grantData.codeChallenge;
+    delete grantData.codeChallengeMethod;
+    delete grantData.authCodeWrappedKey;
+    delete grantData.redirectUri;
     grantData.refreshTokenId = refreshTokenId;
     grantData.refreshTokenWrappedKey = refreshTokenWrappedKey;
     grantData.previousRefreshTokenId = undefined; // No previous token for first use
@@ -1477,6 +1482,7 @@ class OAuthProviderImpl {
 
     // Update the grant with the refresh token hash and no TTL
     await env.OAUTH_KV.put(grantKey, JSON.stringify(grantData));
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV] Updated grant after authorization code exchange:', { userId, grantId });
 
     // Store access token with denormalized grant information
     const accessTokenData: Token = {
@@ -1497,6 +1503,7 @@ class OAuthProviderImpl {
     await env.OAUTH_KV.put(`token:${userId}:${grantId}:${accessTokenId}`, JSON.stringify(accessTokenData), {
       expirationTtl: accessTokenTTL,
     });
+    console.log('[OAUTH_PROVIDER]  [OAUTH_KV] Stored new access token:', { userId, grantId, tokenId: accessTokenId, expiresAt: accessTokenExpiresAt });
 
     // Return the tokens
     return new Response(
@@ -1522,6 +1529,7 @@ class OAuthProviderImpl {
    * @returns Response with token data or error
    */
   private async handleRefreshTokenGrant(body: any, clientInfo: ClientInfo, env: any): Promise<Response> {
+    console.log('[OAUTH_PROVIDER] Handling refresh_token grant');
     const refreshToken = body.refresh_token;
 
     if (!refreshToken) {
@@ -1558,6 +1566,15 @@ class OAuthProviderImpl {
     // Verify client ID matches
     if (grantData.clientId !== clientInfo.clientId) {
       return this.createErrorResponse('invalid_grant', 'Client ID mismatch');
+    }
+
+    // Local modification (dOAuth): refuse, and delete, grants issued before the cutoff. A grant
+    // without a numeric createdAt counts as older than any cutoff.
+    const cutoff = this.options.grantsIssuedBefore;
+    if (cutoff && !(typeof grantData.createdAt === 'number' && grantData.createdAt >= cutoff)) {
+      await env.OAUTH_KV.delete(grantKey);
+      console.warn('[OAUTH_PROVIDER] Refused refresh of a grant issued before the cutoff:', { userId, grantId });
+      return this.createErrorResponse('invalid_grant', 'This grant predates the current login rules; log in again');
     }
 
     // Generate new access token with embedded user and grant IDs
@@ -1689,6 +1706,7 @@ class OAuthProviderImpl {
 
     // Save the updated grant
     await env.OAUTH_KV.put(grantKey, JSON.stringify(grantData));
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Updated grant after refresh token exchange:', { userId, grantId });
 
     // Store new access token with denormalized grant information
     const accessTokenData: Token = {
@@ -1709,6 +1727,7 @@ class OAuthProviderImpl {
     await env.OAUTH_KV.put(`token:${userId}:${grantId}:${accessTokenId}`, JSON.stringify(accessTokenData), {
       expirationTtl: accessTokenTTL,
     });
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Stored new access token:', { userId, grantId, tokenId: accessTokenId, expiresAt: accessTokenExpiresAt });
 
     // Return the new access token and refresh token
     return new Response(
@@ -1739,8 +1758,8 @@ class OAuthProviderImpl {
   /**
    * - Access tokens: Revokes only the specific token
    * - Refresh tokens: Revokes the entire grant (access + refresh tokens)
-   * RFC 7009 §2.1: only the client the token was issued to may revoke it; §2.2: respond 200
-   * when the token was revoked or is invalid.
+   * RFC 7009 §2.1: only the client the token was issued to may revoke it; §2.2: respond 200 when the
+   * token was revoked or is invalid.
    * @param body - The parsed request body containing token parameter
    * @param clientInfo - The authenticated client making the request
    * @param env - Cloudflare Worker environment variables
@@ -1846,6 +1865,7 @@ class OAuthProviderImpl {
    * @returns Response with client registration data or error
    */
   private async handleClientRegistration(request: Request, env: any): Promise<Response> {
+    console.log('[OAUTH_PROVIDER] Handling client registration request');
     if (!this.options.clientRegistrationEndpoint) {
       return this.createErrorResponse('not_implemented', 'Client registration is not enabled', 501);
     }
@@ -1855,15 +1875,30 @@ class OAuthProviderImpl {
       return this.createErrorResponse('invalid_request', 'Method not allowed', 405);
     }
 
+    // Local modification: registration is open (RFC 7591) and every client is stored for good, so
+    // limit how often one address may register. The Workers rate limiter counts per location.
+    if (env.REGISTER_RATE_LIMITER) {
+      const key = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const { success } = await env.REGISTER_RATE_LIMITER.limit({ key });
+      if (!success) {
+        console.warn('[OAUTH_PROVIDER] Client registration rate limit reached');
+        // RFC 6585 §4
+        return new Response('Too many client registrations from this address. Try again later.', {
+          status: 429,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '60' },
+        });
+      }
+    }
+
     // Check content length to ensure it's not too large (1 MiB limit)
-    const contentLength = Number.parseInt(request.headers.get('Content-Length') || '0', 10);
+    const contentLength = parseInt(request.headers.get('Content-Length') || '0', 10);
     if (contentLength > 1048576) {
       // 1 MiB = 1048576 bytes
       return this.createErrorResponse('invalid_request', 'Request payload too large, must be under 1 MiB', 413);
     }
 
     // Parse client metadata with a size limitation
-    let clientMetadata: any;
+    let clientMetadata;
     try {
       const text = await request.text();
       if (text.length > 1048576) {
@@ -1925,6 +1960,16 @@ class OAuthProviderImpl {
       hashedSecret = await hashSecret(clientSecret);
     }
 
+    // Local modification: the URLs a client registers are checked, since they decide where codes
+    // go and they are shown as links in the approval dialog
+    const webPageUrl = (field: string) => {
+      const value = validateStringField(clientMetadata[field]);
+      if (value !== undefined && !isWebUrl(value)) {
+        throw new Error(`${field} must be an http or https URL`);
+      }
+      return value;
+    };
+
     let clientInfo: ClientInfo;
     try {
       // Validate redirect URIs - must exist and have at least one entry
@@ -1935,7 +1980,8 @@ class OAuthProviderImpl {
       for (const uri of redirectUris) {
         const problem = redirectUriProblem(uri);
         if (problem) {
-          return this.createErrorResponse('invalid_redirect_uri', `Invalid redirect URI: ${problem}`);
+          // RFC 7591 §3.2.2
+          return this.createErrorResponse('invalid_redirect_uri', `${problem}: ${uri}`);
         }
       }
 
@@ -1943,11 +1989,12 @@ class OAuthProviderImpl {
         clientId,
         redirectUris,
         clientName: validateStringField(clientMetadata.client_name),
-        logoUri: validateStringField(clientMetadata.logo_uri),
-        clientUri: validateStringField(clientMetadata.client_uri),
-        policyUri: validateStringField(clientMetadata.policy_uri),
-        tosUri: validateStringField(clientMetadata.tos_uri),
-        jwksUri: validateStringField(clientMetadata.jwks_uri),
+        // RFC 7591 §2: URLs of web pages, logos and key sets
+        logoUri: webPageUrl('logo_uri'),
+        clientUri: webPageUrl('client_uri'),
+        policyUri: webPageUrl('policy_uri'),
+        tosUri: webPageUrl('tos_uri'),
+        jwksUri: webPageUrl('jwks_uri'),
         contacts: validateStringArray(clientMetadata.contacts),
         grantTypes: validateStringArray(clientMetadata.grant_types) || ['authorization_code', 'refresh_token'],
         responseTypes: validateStringArray(clientMetadata.response_types) || ['code'],
@@ -1968,6 +2015,7 @@ class OAuthProviderImpl {
 
     // Store client info
     await env.OAUTH_KV.put(`client:${clientId}`, JSON.stringify(clientInfo));
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Registered new client:', { clientId: clientInfo.clientId, tokenEndpointAuthMethod: clientInfo.tokenEndpointAuthMethod });
 
     // Return client information with the original unhashed secret
     const response: Record<string, any> = {
@@ -2017,10 +2065,12 @@ class OAuthProviderImpl {
     }
 
     const accessToken = authHeader.substring(7);
+    console.log('[OAUTH_PROVIDER] Validating access token');
 
     // Parse the token to extract user ID and grant ID for parallel lookups
     const tokenParts = accessToken.split(':');
     if (tokenParts.length !== 3) {
+      console.log('[OAUTH_PROVIDER] Invalid token format');
       return this.createErrorResponse('invalid_token', 'Invalid token format', 401, {
         'WWW-Authenticate': 'Bearer realm="OAuth", error="invalid_token"',
       });
@@ -2030,6 +2080,7 @@ class OAuthProviderImpl {
 
     // Generate token ID from the full token
     const accessTokenId = await generateTokenId(accessToken);
+    console.log('[OAUTH_PROVIDER] Extracted userId:', userId, 'grantId:', grantId, 'tokenId:', accessTokenId);
 
     // Look up the token record, which now contains the denormalized grant information
     const tokenKey = `token:${userId}:${grantId}:${accessTokenId}`;
@@ -2037,10 +2088,12 @@ class OAuthProviderImpl {
 
     // Verify token
     if (!tokenData) {
+      console.log('[OAUTH_PROVIDER] Access token not found');
       return this.createErrorResponse('invalid_token', 'Invalid access token', 401, {
         'WWW-Authenticate': 'Bearer realm="OAuth", error="invalid_token"',
       });
     }
+    console.log('[OAUTH_PROVIDER] Access token data found:', { userId, grantId, expiresAt: tokenData.expiresAt });
 
     // Check if token is expired (should be auto-deleted by KV TTL, but double-check)
     const now = Math.floor(Date.now() / 1000);
@@ -2057,7 +2110,7 @@ class OAuthProviderImpl {
     const decryptedProps = await decryptProps(encryptionKey, tokenData.grant.encryptedProps);
 
     // Set the decrypted props on the context object
-    ctx.props = decryptedProps;
+    (ctx as { props: unknown }).props = decryptedProps;
 
     // Inject OAuth helpers into env if not already present
     if (!env.OAUTH_PROVIDER) {
@@ -2071,17 +2124,21 @@ class OAuthProviderImpl {
     if (!apiHandler) {
       // This shouldn't happen since we already checked with isApiRequest,
       // but handle it gracefully just in case
+      console.error('[OAUTH_PROVIDER] No API handler found for URL:', url.pathname);
       return this.createErrorResponse('invalid_request', 'No handler found for API route', 404);
     }
 
     // Call the API handler based on its type
     if (apiHandler.type === HandlerType.EXPORTED_HANDLER) {
+      console.log('[OAUTH_PROVIDER] Invoking exported handler function');
       // It's an object with a fetch method
       return apiHandler.handler.fetch(request as Parameters<ExportedHandlerWithFetch['fetch']>[0], env, ctx);
+    } else {
+      console.log('[OAUTH_PROVIDER] Instantiating and invoking WorkerEntrypoint handler class');
+      // It's a WorkerEntrypoint class - instantiate it with ctx and env in that order
+      const handler = new apiHandler.handler(ctx, env);
+      return handler.fetch(request);
     }
-    // It's a WorkerEntrypoint class - instantiate it with ctx and env in that order
-    const handler = new apiHandler.handler(ctx, env);
-    return handler.fetch(request);
   }
   /**
    * Creates the helper methods object for OAuth operations
@@ -2104,7 +2161,9 @@ class OAuthProviderImpl {
    */
   async getClient(env: any, clientId: string): Promise<ClientInfo | null> {
     const clientKey = `client:${clientId}`;
+    console.log('[OAUTH_PROVIDER] Fetching client info for clientId:', clientId);
     const client = await env.OAUTH_KV.get(clientKey, { type: 'json' });
+    console.log('[OAUTH_PROVIDER] Client found:', !!client);
     return client
   }
 
@@ -2119,7 +2178,7 @@ class OAuthProviderImpl {
   private createErrorResponse(
     code: string,
     description: string,
-    status = 400,
+    status: number = 400,
     headers: Record<string, string> = {}
   ): Response {
     // Notify the user of the error and allow them to override the response
@@ -2153,6 +2212,53 @@ const DEFAULT_ACCESS_TOKEN_TTL = 60 * 60;
 const TOKEN_LENGTH = 32;
 
 // Helper Functions
+
+/** Whether a string is an absolute http or https URL */
+function isWebUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'https:' || protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** Loopback hosts a native app may use with plain http (RFC 8252 §7.3, §8.3) */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * Schemes a browser handles itself. None of them is "a non-HTTP application-specific URL that is
+ * available only to the client application" (RFC 7591 §5), and javascript:, data: and vbscript:
+ * run or render content chosen by whoever registered the client.
+ */
+const BROWSER_SCHEMES = new Set(['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:']);
+
+/**
+ * Checks a redirect URI offered at registration.
+ * @returns Why it is refused, or null if it is acceptable
+ */
+export function redirectUriProblem(uri: string): string | null {
+  // RFC 6749 §3.1.2: an absolute URI without a fragment component
+  if (uri.includes('#')) return 'A redirect URI must not contain a fragment';
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return 'A redirect URI must be an absolute URI';
+  }
+  // No user information: "https://claude.ai@evil.example/cb" reads as claude.ai but sends the code
+  // to evil.example (RFC 3986 §3.2.1 deprecates passwords there; from lite, decision 2026-11-09)
+  if (url.username || url.password) return 'A redirect URI must not contain user information';
+  if (url.protocol === 'https:') return null;
+  // RFC 9700 §2.6: no plain http, except loopback redirects of native apps
+  if (url.protocol === 'http:') {
+    return LOOPBACK_HOSTS.has(url.hostname) ? null : 'A redirect URI must use https, except on a loopback address';
+  }
+  if (BROWSER_SCHEMES.has(url.protocol)) return 'This redirect URI scheme is not allowed';
+  // A private-use scheme of a native app (RFC 7591 §5, RFC 8252 §7.1)
+  return null;
+}
+
 /**
  * Hashes a secret value using SHA-256
  * @param secret - The secret value to hash
@@ -2412,34 +2518,59 @@ class OAuthHelpersImpl implements OAuthHelpers {
     const responseType = url.searchParams.get('response_type') || '';
     const clientId = url.searchParams.get('client_id') || '';
     console.log('[OAUTH_PROVIDER] Parsed clientId:', clientId);
-    const redirectUri = url.searchParams.get('redirect_uri') || '';
+    let redirectUri = url.searchParams.get('redirect_uri') || '';
     const scope = (url.searchParams.get('scope') || '').split(' ').filter(Boolean);
     const state = url.searchParams.get('state') || '';
     const codeChallenge = url.searchParams.get('code_challenge') || undefined;
+    // RFC 7636 §4.3: the method defaults to "plain" when absent
     const codeChallengeMethod = url.searchParams.get('code_challenge_method') || 'plain';
 
-    // Check if implicit flow is requested but not allowed
-    if (responseType === 'token' && !this.provider.options.allowImplicitFlow) {
-      throw new Error('The implicit grant flow is not enabled for this provider');
+    // Every error is shown to the user and never redirected (see AuthRequestError)
+    if (!clientId) {
+      throw new AuthRequestError('invalid_request', 'Missing client_id.');
+    }
+    const clientInfo = await this.lookupClient(clientId);
+    console.log('[OAUTH_PROVIDER] Client found:', !!clientInfo);
+    if (!clientInfo) {
+      throw new AuthRequestError('invalid_request', 'Unknown client.');
+    }
+    if (redirectUri) {
+      // Exact string match against the registered URIs (RFC 6749 §3.1.2.3, RFC 9700 §4.1.3)
+      if (!clientInfo.redirectUris.includes(redirectUri)) {
+        throw new AuthRequestError('invalid_request', 'The redirect_uri is not registered for this client.');
+      }
+    } else if (clientInfo.redirectUris.length === 1) {
+      // RFC 6749 §3.1.2.3: redirect_uri may be omitted only when exactly one is registered
+      redirectUri = clientInfo.redirectUris[0];
+    } else {
+      throw new AuthRequestError('invalid_request', 'Missing redirect_uri.');
     }
 
-    // Validate the client ID and redirect URI
-    if (clientId) {
-      const clientInfo = await this.lookupClient(clientId);
-      console.log('Client info:', clientInfo);
-
-      if (!clientInfo) {
-        throw new Error(
-          "Invalid client. The clientId provided does not match to this client."
+    // RFC 6749 §4.1.2.1 would send the errors below back to the redirect URI. Matching the
+    // registration proves only that someone registered that URI, and anyone can register one, so
+    // they are shown here instead, before any login (RFC 9700 §4.11.2, which updates RFC 6749).
+    const implicit = responseType === 'token' && !!this.provider.options.allowImplicitFlow;
+    if (!responseType) {
+      throw new AuthRequestError('invalid_request', 'Missing response_type.');
+    }
+    if (responseType !== 'code' && !implicit) {
+      throw new AuthRequestError('unsupported_response_type', 'Only the authorization code flow is supported.');
+    }
+    // RFC 7591 §2: a client registered without response_types uses only "code"
+    if (!(clientInfo.responseTypes ?? ['code']).includes(responseType)) {
+      throw new AuthRequestError('unauthorized_client', 'This client is not registered for this response_type.');
+    }
+    // PKCE with S256 is required for the code flow (dOAuth protocol rule, 2026-11-20). A missing
+    // method means "plain" (RFC 7636 §4.3), so it is refused too (RFC 7636 §4.4.1: invalid_request).
+    if (responseType === 'code') {
+      if (!codeChallenge) {
+        throw new AuthRequestError(
+          'invalid_request',
+          'PKCE is required: send a code_challenge with code_challenge_method=S256.'
         );
       }
-      // If client exists, validate the redirect URI against registered URIs
-      if (clientInfo && redirectUri) {
-        if (!clientInfo.redirectUris.includes(redirectUri)) {
-          throw new Error(
-            "Invalid redirect URI. The redirect URI provided does not match any registered URI for this client."
-          );
-        }
+      if (codeChallengeMethod !== 'S256') {
+        throw new AuthRequestError('invalid_request', 'Unsupported code_challenge_method: only S256 is accepted.');
       }
     }
 
@@ -2471,6 +2602,24 @@ class OAuthHelpersImpl implements OAuthHelpers {
    * @returns A Promise resolving to an object containing the redirect URL
    */
   async completeAuthorization(options: CompleteAuthorizationOptions): Promise<{ redirectTo: string }> {
+    // Second line of defense: re-check the request against the client's registration, so that no
+    // caller can send a code or token to an unregistered address or through a disabled flow,
+    // even if the request never went through parseAuthRequest
+    const { clientId, redirectUri, responseType } = options.request;
+    const clientInfo = clientId ? await this.lookupClient(clientId) : null;
+    if (!clientInfo) {
+      throw new Error('completeAuthorization: unknown client');
+    }
+    if (!redirectUri || !clientInfo.redirectUris.includes(redirectUri)) {
+      throw new Error('completeAuthorization: redirect URI is not registered for this client');
+    }
+    if (responseType !== 'code' && !(responseType === 'token' && this.provider.options.allowImplicitFlow)) {
+      throw new Error('completeAuthorization: unsupported response type');
+    }
+    if (!(clientInfo.responseTypes ?? ['code']).includes(responseType)) {
+      throw new Error('completeAuthorization: response type not registered for this client');
+    }
+
     // Generate a unique grant ID
     const grantId = generateRandomString(16);
 
@@ -2511,6 +2660,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
       // Store the grant with a key that includes the user ID
       const grantKey = `grant:${options.userId}:${grantId}`;
       await this.env.OAUTH_KV.put(grantKey, JSON.stringify(grant));
+      console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Stored grant for implicit flow:', { userId: options.userId, grantId });
 
       // Store access token with denormalized grant information
       const accessTokenData: Token = {
@@ -2533,6 +2683,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
         JSON.stringify(accessTokenData),
         { expirationTtl: accessTokenTTL }
       );
+      console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Stored access token for implicit flow:', { userId: options.userId, grantId, tokenId: accessTokenId });
 
       // Build the redirect URL for implicit flow (token in fragment, not query params)
       const redirectUrl = new URL(options.request.redirectUri);
@@ -2550,56 +2701,60 @@ class OAuthHelpersImpl implements OAuthHelpers {
       redirectUrl.hash = fragment.toString();
 
       return { redirectTo: redirectUrl.toString() };
+    } else {
+      console.log('[OAUTH_PROVIDER] Authorization code flow requested, generating authorization code');
+      // Standard authorization code flow
+      // Generate an authorization code with embedded user and grant IDs
+      const authCodeSecret = generateRandomString(32);
+      const authCode = `${options.userId}:${grantId}:${authCodeSecret}`;
+
+      // Hash the authorization code
+      const authCodeId = await hashSecret(authCode);
+
+      // Wrap the encryption key with the auth code
+      const authCodeWrappedKey = await wrapKeyWithToken(authCode, encryptionKey);
+
+      // Store the grant with the auth code hash
+      const grant: Grant = {
+        id: grantId,
+        clientId: options.request.clientId,
+        userId: options.userId,
+        scope: options.scope,
+        metadata: options.metadata,
+        encryptedProps: encryptedData,
+        createdAt: now,
+        authCodeId: authCodeId, // Store the auth code hash in the grant
+        authCodeWrappedKey: authCodeWrappedKey, // Store the wrapped key
+        // Store PKCE parameters if provided
+        codeChallenge: options.request.codeChallenge,
+        codeChallengeMethod: options.request.codeChallengeMethod,
+        // So /token can check that a redirect_uri it receives is this one
+        redirectUri: options.request.redirectUri,
+      };
+
+      // Store the grant with a key that includes the user ID
+      const grantKey = `grant:${options.userId}:${grantId}`;
+
+      // Set 10-minute TTL for the grant (will be extended when code is exchanged)
+      const codeExpiresIn = 600; // 10 minutes
+      await this.env.OAUTH_KV.put(grantKey, JSON.stringify(grant), { expirationTtl: codeExpiresIn });
+      console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Stored grant with auth code:', { userId: options.userId, grantId });
+
+      // Build the redirect URL for authorization code flow
+      const redirectUrl = new URL(options.request.redirectUri);
+      redirectUrl.searchParams.set('code', authCode);
+      const extras = this.provider.options.clientRedirectParams?.(options.props, options.request) ?? {};
+      for (const [key, value] of Object.entries(extras)) {
+        if (value) redirectUrl.searchParams.set(key, value);
+      }
+      if (options.request.state) {
+        console.log('[OAUTH_PROVIDER] Adding the client state to the redirect URL');
+        redirectUrl.searchParams.set('state', options.request.state);
+      }
+      // The redirect URL carries the authorization code, so log only where it goes
+      console.log('[OAUTH_PROVIDER] Redirecting to:', redirectUrl.origin + redirectUrl.pathname);
+      return { redirectTo: redirectUrl.toString() };
     }
-    console.log('[OAUTH_PROVIDER] Authorization code flow requested, generating authorization code');
-    // Standard authorization code flow
-    // Generate an authorization code with embedded user and grant IDs
-    const authCodeSecret = generateRandomString(32);
-    const authCode = `${options.userId}:${grantId}:${authCodeSecret}`;
-
-    // Hash the authorization code
-    const authCodeId = await hashSecret(authCode);
-
-    // Wrap the encryption key with the auth code
-    const authCodeWrappedKey = await wrapKeyWithToken(authCode, encryptionKey);
-
-    // Store the grant with the auth code hash
-    const grant: Grant = {
-      id: grantId,
-      clientId: options.request.clientId,
-      userId: options.userId,
-      scope: options.scope,
-      metadata: options.metadata,
-      encryptedProps: encryptedData,
-      createdAt: now,
-      authCodeId: authCodeId, // Store the auth code hash in the grant
-      authCodeWrappedKey: authCodeWrappedKey, // Store the wrapped key
-      // Store PKCE parameters if provided
-      codeChallenge: options.request.codeChallenge,
-      codeChallengeMethod: options.request.codeChallengeMethod,
-      // Bind the redirect URI to the code when the authorization request included it (RFC 6749 §4.1.3)
-      redirectUri: options.request.redirectUriInRequest ? options.request.redirectUri : undefined,
-    };
-
-    // Store the grant with a key that includes the user ID
-    const grantKey = `grant:${options.userId}:${grantId}`;
-
-    // Set 10-minute TTL for the grant (will be extended when code is exchanged)
-    const codeExpiresIn = 600; // 10 minutes
-    await this.env.OAUTH_KV.put(grantKey, JSON.stringify(grant), { expirationTtl: codeExpiresIn });
-    console.log('[OAUTH_PROVIDER] Stored grant with auth code:', grantId, 'for client', grant.clientId);
-
-    // Build the redirect URL for authorization code flow
-    const redirectUrl = new URL(options.request.redirectUri);
-    redirectUrl.searchParams.set('code', authCode);
-    if (options.request.state) {
-      console.log('[OAUTH_PROVIDER] Adding state to redirect URL:', options.request.state);
-      redirectUrl.searchParams.set('state', options.request.state);
-      console.log('[OAUTH_PROVIDER] Adding client ID to redirect URL:', options.request.clientId);
-      redirectUrl.searchParams.set('client', options.request.clientId);
-    }
-    console.log('[OAUTH_PROVIDER] Redirecting to client callback:', redirectUrl.origin + redirectUrl.pathname);
-    return { redirectTo: redirectUrl.toString() };
   }
 
   /**
@@ -2640,6 +2795,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
     }
 
     await this.env.OAUTH_KV.put(`client:${clientId}`, JSON.stringify(newClient));
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Created new client:', clientId);
 
     // Create the response object
     const clientResponse = { ...newClient };
@@ -2706,7 +2862,7 @@ class OAuthHelpersImpl implements OAuthHelpers {
     }
 
     // Determine token endpoint auth method
-    const authMethod = updates.tokenEndpointAuthMethod || client.tokenEndpointAuthMethod || 'client_secret_basic';
+    let authMethod = updates.tokenEndpointAuthMethod || client.tokenEndpointAuthMethod || 'client_secret_basic';
     const isPublicClient = authMethod === 'none';
 
     // Handle changes in auth method
@@ -2733,10 +2889,11 @@ class OAuthHelpersImpl implements OAuthHelpers {
     if (!isPublicClient && secretToStore) {
       updatedClient.clientSecret = secretToStore;
     } else {
-      updatedClient.clientSecret = undefined;
+      delete updatedClient.clientSecret;
     }
 
     await this.env.OAUTH_KV.put(`client:${clientId}`, JSON.stringify(updatedClient));
+    console.log('[OAUTH_PROVIDER] [OAUTH_KV]  Updated client:', clientId);
 
     // Create a response object
     const response = { ...updatedClient };
@@ -2861,35 +3018,55 @@ class OAuthHelpersImpl implements OAuthHelpers {
   }
 
   /**
-   * Validates an access token with the same checks as API requests (format, stored record,
-   * expiry) and returns its owner and decrypted props, or null if it is not a valid token.
-   * @param token - The access token string
+   * Validates an access token and decrypts its props (same checks as handleApiRequest)
+   * @param token - The bearer access token (`userId:grantId:secret`)
+   * @returns The validated token details, or null if the token is malformed, unknown or expired
    */
-  async unwrapToken(token: string): Promise<TokenSummary | null> {
-    const parts = token.split(':');
-    if (parts.length !== 3) return null;
-    const [userId, grantId] = parts;
+  async unwrapToken(token: string): Promise<UnwrappedToken | null> {
+    const tokenParts = token.split(':');
+    if (tokenParts.length !== 3 || !tokenParts[0] || !tokenParts[1] || !tokenParts[2]) {
+      return null;
+    }
+    const [userId, grantId] = tokenParts;
 
+    // The KV key embeds the SHA-256 of the full token, so only the exact token finds its record
     const tokenId = await generateTokenId(token);
-    const tokenData: Token | null = await this.env.OAUTH_KV.get(`token:${userId}:${grantId}:${tokenId}`, {
-      type: 'json',
-    });
-    if (!tokenData) return null;
+    const tokenData: Token | null = await this.env.OAUTH_KV.get(`token:${userId}:${grantId}:${tokenId}`, { type: 'json' });
+    if (!tokenData) {
+      return null;
+    }
 
     const now = Math.floor(Date.now() / 1000);
-    if (tokenData.expiresAt < now) return null;
+    if (tokenData.expiresAt < now) {
+      return null;
+    }
 
     const encryptionKey = await unwrapKeyWithToken(token, tokenData.wrappedEncryptionKey);
     const props = await decryptProps(encryptionKey, tokenData.grant.encryptedProps);
+
     return {
-      userId: tokenData.userId,
-      grantId: tokenData.grantId,
+      userId,
+      grantId,
       clientId: tokenData.grant.clientId,
       scope: tokenData.grant.scope,
       expiresAt: tokenData.expiresAt,
       props,
     };
   }
+}
+
+/**
+ * Local modification (dOAuth): grant listing and revocation outside a request, for code that has an
+ * env but no OAuthProvider instance (algorand-remote-mcp's wallet_logout tool). Neither method uses
+ * the provider instance.
+ * @param env - Cloudflare Worker environment variables (needs OAUTH_KV)
+ */
+export function grantHelpers(env: any): Pick<OAuthHelpers, 'listUserGrants' | 'revokeGrant'> {
+  const helpers = new OAuthHelpersImpl(env, undefined as unknown as OAuthProviderImpl);
+  return {
+    listUserGrants: (userId, options) => helpers.listUserGrants(userId, options),
+    revokeGrant: (grantId, userId) => helpers.revokeGrant(grantId, userId),
+  };
 }
 
 /**

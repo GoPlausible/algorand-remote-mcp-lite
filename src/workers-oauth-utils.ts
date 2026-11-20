@@ -316,16 +316,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
   // Safe URLs
   const logoUrl = server.logo ? sanitizeHtml(server.logo) : "";
   console.log("[WORKER_OAUTH_UTILS] Sanitized logo URL:", logoUrl.substring(0, 100)); // Log first 100 chars for brevity
-  // const clientUri = client?.clientUri ? sanitizeHtml(client.clientUri) : "";
-  // Not shown: this server's own URL used to appear as the "Website" of every requesting client,
-  // including self-registered ones, which lent them this server's identity.
-  const clientUri = "";
-  console.log("[WORKER_OAUTH_UTILS] Sanitized client URI:", clientUri.substring(0, 100)); // Log first 100 chars for brevity
-  // const policyUri = client?.policyUri ? sanitizeHtml(client.policyUri) : "http://goplausible.com/policy";
-  const policyUri = "http://goplausible.com/policy";
-  console.log("[WORKER_OAUTH_UTILS] Sanitized policy URI:", policyUri.substring(0, 100)); // Log first 100 chars for brevity
-  const tosUri = client?.tosUri ? sanitizeHtml(client.tosUri) : "";
-  console.log("[WORKER_OAUTH_UTILS] Sanitized TOS URI:", tosUri.substring(0, 100)); // Log first 100 chars for brevity
+  // The client's own pages, and only as http(s) links: a client registered before the protocol's
+  // registration checks may still carry javascript: or data: URLs. Never this server's own pages,
+  // which would lend a self-registered client this server's identity.
+  const clientUri = webUrl(client?.clientUri);
+  const policyUri = webUrl(client?.policyUri);
+  const tosUri = webUrl(client?.tosUri);
 
   // Client contacts
   console.log("[WORKER_OAUTH_UTILS] Sanitizing client contacts");
@@ -423,6 +419,13 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
           
           .description {
             color: #555;
+          }
+
+          .notice {
+            color: #8a5a00;
+            font-size: 0.85rem;
+            text-align: center;
+            margin: -0.5rem 0 1rem;
           }
           
           .server-links {
@@ -661,7 +664,8 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
             
           <div class="card">
             
-            <h2 class="alert"><strong>${clientName || "A new MCP Client"}</strong> is requesting access</h1>
+            <h2 class="alert"><strong>${clientName || "A new MCP Client"}</strong> is requesting access</h2>
+            <p class="notice">The application chose this name itself; ${serverName} has not verified it.</p>
             
             <div class="client-info">
               <div class="client-detail">
@@ -818,6 +822,17 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
       "Set-Cookie": setCookie,
     },
   });
+}
+
+/** An http(s) URL, HTML-escaped for an attribute or text; anything else (javascript:, data:, ...) gives "" */
+function webUrl(value: string | undefined): string {
+  if (!value) return "";
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:" ? sanitizeHtml(value) : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

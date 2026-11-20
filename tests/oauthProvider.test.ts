@@ -155,14 +155,15 @@ describe('dynamic client registration', () => {
     }
   });
 
-  it('rejects non-loopback http, fragments, private-use and dangerous schemes, and non-URIs', async () => {
+  // Registration follows the protocol's shared rule (the master oauth-provider.ts, synced from
+  // doauth). Private-use schemes such as cursor:// are still accepted there, pending the owner's
+  // decision; this server's /authorize refuses them (redirectUriProblem in utils/oauthFlow.ts).
+  it('rejects non-loopback http, fragments, user information, dangerous schemes and non-URIs', async () => {
     const bad = [
       'http://203.0.113.7/cb',
       'http://client.example/cb',
       'https://client.example/cb#frag',
       'https://client.example/cb#',
-      'cursor://anysphere.cursor-mcp/oauth/callback',
-      'com.example.app:/oauth',
       'javascript:alert(1)',
       'data:text/html,hi',
       'file:///etc/passwd',
@@ -180,18 +181,22 @@ describe('dynamic client registration', () => {
 });
 
 describe('token endpoint', () => {
-  it('requires the identical redirect_uri when the authorization request included one', async () => {
+  // The protocol's rule (master oauth-provider.ts): a redirect_uri sent to /token must be the one
+  // the code was issued for (RFC 6749 §4.1.3); sending it is optional (OAuth 2.1 draft 17 §10.2),
+  // since PKCE with S256 is required
+  it('refuses a different redirect_uri and accepts the identical one or none', async () => {
     const { clientId, code } = await issueCode();
     const wrong = await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: 'https://client.example/other' });
     expect(wrong.status).toBe(400);
     expect(((await wrong.json()) as { error: string }).error).toBe('invalid_grant');
-    const missing = await exchange({ code, client_id: clientId, code_verifier: VERIFIER });
-    expect(missing.status).toBe(400);
-    expect(((await missing.json()) as { error: string }).error).toBe('invalid_request');
 
     const ok = await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: REDIRECT });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { access_token: string }).access_token).toBeTruthy();
+
+    const second = await issueCode();
+    const omitted = await exchange({ code: second.code, client_id: second.clientId, code_verifier: VERIFIER });
+    expect(omitted.status).toBe(200);
   });
 
   it('does not require redirect_uri when the authorization request omitted it', async () => {

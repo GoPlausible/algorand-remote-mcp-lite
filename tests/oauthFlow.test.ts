@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OauthHandler } from '../src/oauth-handler';
+import { OauthHandler, pickVerifiedGitHubEmail } from '../src/oauth-handler';
 import {
   consentCookieName,
   consumeConsent,
@@ -265,7 +265,7 @@ describe('GET /authorize', () => {
     expect((await request(env, authorizeUrl({ code_challenge_method: 'S256' }))).status).toBe(200);
   });
 
-  it('records whether redirect_uri was in the request, and uses the single registered one when absent', async () => {
+  it('uses the single registered redirect_uri when the request omits it', async () => {
     const { env } = makeEnv();
     await request(env, authorizeUrl());
     const url = new URL(authorizeUrl());
@@ -273,10 +273,7 @@ describe('GET /authorize', () => {
     const res = await request(env, url.toString());
     expect(res.status).toBe(200);
     const stored = [...env.CODE_VERIFIER_KV.store.values()].map((v) => JSON.parse(v));
-    expect(stored.map((s) => [s.redirectUri, s.redirectUriInRequest])).toEqual([
-      [REDIRECT, true],
-      [REDIRECT, false],
-    ]);
+    expect(stored.map((s) => s.redirectUri)).toEqual([REDIRECT, REDIRECT]);
   });
 
   it('shows the requested scopes, the redirect target and what each provider shares', async () => {
@@ -431,5 +428,90 @@ describe('GET /callback', () => {
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
     const expected = btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     expect(challenge).toBe(expected);
+  });
+});
+
+describe('who the user is (/callback)', () => {
+  function stubGoogleUser(user: Record<string, unknown>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.startsWith('https://accounts.google.com/o/oauth2/token')) {
+          return Response.json({ access_token: 'upstream-access-token' });
+        }
+        if (url.startsWith('https://www.googleapis.com/oauth2/v2/userinfo')) return Response.json(user);
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+  }
+
+  async function googleCallback(user: Record<string, unknown>) {
+    const { env, completeAuthorization } = makeEnv();
+    stubGoogleUser(user);
+    const browser = new Jar();
+    const token = await openConsent(env, browser);
+    const res = await postConsent(env, { consent_token: token, provider: 'google' }, browser);
+    const state = new URL(res.headers.get('location') as string).searchParams.get('state') as string;
+    const done = await request(env, `${BASE}/callback?code=c&state=${state}`, {}, browser);
+    return { done, completeAuthorization, browser, state };
+  }
+
+  it('refuses a Google account whose email Google has not verified', async () => {
+    const { done, completeAuthorization, browser, state } = await googleCallback({
+      id: 'g1', name: 'Mallory', email: 'victim@example.com', verified_email: false,
+    });
+    expect(done.status).toBe(400);
+    expect(completeAuthorization).not.toHaveBeenCalled();
+    expect(browser.cookies.has(stateCookieName(state))).toBe(false);
+  });
+
+  it('refuses a login without an email or without the provider user ID', async () => {
+    for (const user of [{ id: 'g1', name: 'NoMail' }, { name: 'NoId', email: 'a@example.com', verified_email: true }]) {
+      const { done, completeAuthorization } = await googleCallback(user);
+      expect(done.status).toBe(400);
+      expect(completeAuthorization).not.toHaveBeenCalled();
+    }
+  });
+
+  it('passes a verified Google account through, with its ID', async () => {
+    const { done, completeAuthorization } = await googleCallback({
+      id: 'g1', name: 'Alice', email: 'alice@example.com', verified_email: true,
+    });
+    expect(done.status).toBe(302);
+    const opts = completeAuthorization.mock.calls[0][0] as unknown as { props: { email: string; id: string } };
+    expect(opts.props).toMatchObject({ email: 'alice@example.com', id: 'g1' });
+  });
+
+  it('names a GitHub account only by an address GitHub marks verified', () => {
+    const emails = [
+      { email: 'unverified-primary@example.com', primary: true, verified: false },
+      { email: 'public@example.com', primary: false, verified: true },
+      { email: 'other@example.com', primary: false, verified: true },
+    ];
+    expect(pickVerifiedGitHubEmail(emails, 'public@example.com')).toBe('public@example.com');
+    expect(pickVerifiedGitHubEmail(emails, 'unverified-primary@example.com')).toBe('public@example.com');
+    expect(pickVerifiedGitHubEmail(emails, null)).toBe('public@example.com');
+    expect(pickVerifiedGitHubEmail([{ email: 'p@example.com', primary: true, verified: true }, ...emails], null)).toBe('p@example.com');
+    expect(pickVerifiedGitHubEmail([{ email: 'x@example.com', primary: true, verified: false }], 'x@example.com')).toBe('');
+    expect(pickVerifiedGitHubEmail({ message: 'Bad credentials' }, 'x@example.com')).toBe('');
+  });
+});
+
+describe('the consent page shows only the client\'s own http(s) pages', () => {
+  it('drops javascript: links, shows no GoPlausible page as the client\'s, and says the name is unverified', async () => {
+    const { env } = makeEnv();
+    const client = {
+      ...CLIENT,
+      clientUri: 'https://client.example/',
+      policyUri: 'javascript:alert(1)',
+      tosUri: 'javascript:alert(2)',
+    };
+    (env.OAUTH_PROVIDER as { lookupClient: unknown }).lookupClient = async (id: string) => (id === CLIENT.clientId ? client : null);
+    const html = await (await request(env, authorizeUrl(), {}, new Jar())).text();
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('goplausible.com/policy');
+    expect(html).toContain('href="https://client.example/"');
+    expect(html).toContain('has not verified it');
   });
 });

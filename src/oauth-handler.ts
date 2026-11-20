@@ -83,12 +83,8 @@ app.get("/authorize", async (c) => {
 	if (authReqInfo.codeChallengeMethod !== "S256") {
 		return c.text("Invalid request: code_challenge_method must be S256", 400);
 	}
-	authReqInfo = {
-		...authReqInfo,
-		redirectUri,
-		// RFC 6749 §4.1.3: the token request must repeat redirect_uri if this request included it
-		redirectUriInRequest: authReqInfo.redirectUri !== "",
-	};
+	// The provider stores this redirect URI in the grant; a redirect_uri sent to /token must equal it
+	authReqInfo = { ...authReqInfo, redirectUri };
 	const clientId = authReqInfo.clientId;
 	console.log("[OAUTH_HANDLER] Validated OAuth request for Client ID:", clientId);
 
@@ -266,14 +262,9 @@ app.get("/callback", async (c) => {
 		id: number;
 		login: string;
 		name?: string;
-		email?: string;
+		email?: string | null;
 	}
 
-	interface GitHubEmail {
-		email: string;
-		primary: boolean;
-		verified: boolean;
-	}
 	interface TwitterUser {
 		id: string;
 		name: string;
@@ -283,12 +274,14 @@ app.get("/callback", async (c) => {
 		sub: string;
 		name: string;
 		email?: string;
+		email_verified?: boolean;
 	}
 
 	interface GoogleUser {
 		id: string;
 		name: string;
 		email: string;
+		verified_email?: boolean;
 	}
 	const res = await userResponse.json();
 	// Parse the user data with the appropriate type
@@ -307,56 +300,67 @@ app.get("/callback", async (c) => {
 	let id: string;
 	let name: string;
 	let email: string;
-	console.log(`[OAUTH_HANDLER] User data received: ${userData}`);
 
 	if (provider === "github") {
 		const githubUser = userData as GitHubUser;
-		id = githubUser.id.toString();
+		id = githubUser.id != null ? String(githubUser.id) : "";
 		name = githubUser.name || githubUser.login;
 
-		// If email is null or not present, we need to make an additional request
-		if (!githubUser.email) {
-			const emailsResponse = await fetch("https://api.github.com/user/emails", {
-				headers: {
-					...headers,
-					"User-Agent": "goplausible-remote-mcp", // Ensure User-Agent is set for this request too
-				},
-			});
-			if (emailsResponse.ok) {
-				const emails = (await emailsResponse.json()) as GitHubEmail[];
-				const primaryEmail = emails.find((e) => e.primary);
-				email = primaryEmail ? primaryEmail.email : emails[0]?.email || "";
-			} else {
-				email = "";
-			}
-		} else {
-			email = githubUser.email;
+		// Only an address GitHub marks verified may name an account, so /user/emails is always read,
+		// even when /user has a public email. None leaves email empty, which the identity check
+		// below rejects.
+		email = "";
+		const emailsResponse = await fetch("https://api.github.com/user/emails", {
+			headers: {
+				...headers,
+				"User-Agent": "goplausible-remote-mcp", // Ensure User-Agent is set for this request too
+			},
+		});
+		if (emailsResponse.ok) {
+			email = pickVerifiedGitHubEmail(await emailsResponse.json(), githubUser.email);
 		}
 	} else if (provider === "twitter") {
 		const twitterUser = userData as TwitterUser;
-		id = twitterUser.id;
+		id = twitterUser.id || "";
 		name = twitterUser.username;
-		// Twitter API does not return email by default, so we generate a synthetic email
-		// using the Twitter username to ensure compatibility with the vault-based account system
-		email = `${twitterUser.username}`;
+		// The X API returns no email, so the X username names the account in the vault-based
+		// account system
+		email = twitterUser.username || "";
 	} else if (provider === "linkedin") {
 		const linkedInUser = userData as LinkedInUser;
-		id = linkedInUser.sub;
+		id = linkedInUser.sub || "";
 		name = linkedInUser.name;
-		email = `${linkedInUser.email}`;
+		// A missing email used to become the literal string "undefined", shared by every such user
+		email = linkedInUser.email_verified === false ? "" : linkedInUser.email || "";
 	} else {
 		// Google format
 		const googleUser = userData as GoogleUser;
-		id = googleUser.id;
+		id = googleUser.id || "";
 		name = googleUser.name;
-		email = googleUser.email;
+		email = googleUser.verified_email === false ? "" : googleUser.email || "";
 	}
 
-	console.log(`[OAUTH_HANDLER] Successfully fetched user info from ${provider}: `, {
+	// The email (or X username) names the user's Vault account and the ID binds it, so both must be real
+	if (!id || !email) {
+		console.error(`[OAUTH_HANDLER] Rejected ${provider} login without a usable identity:`, {
+			hasId: !!id,
+			hasEmail: !!email,
+		});
+		return new Response(
+			`Your ${provider} account has no verified email${provider === "twitter" ? " or username" : ""} that this server can use to identify you.`,
+			{
+				status: 400,
+				headers: {
+					"Content-Type": "text/plain; charset=utf-8",
+					"Set-Cookie": clearFlowCookie(stateCookieName(state)),
+				},
+			},
+		);
+	}
+
+	console.log(`[OAUTH_HANDLER] Successfully fetched user info from ${provider}:`, {
 		id,
-		name,
 		clientId: authReqInfo.clientId,
-		email,
 	});
 	const scope = authReqInfo.scope;
 	console.log(`[OAUTH_HANDLER] OAuth scope requested: ${scope}`);
@@ -452,5 +456,28 @@ app.post("/logout", async (c) => {
  * with headers that keep it from running as a page. See src/utils/imageProxy.ts.
  */
 app.get(IMAGE_PROXY_PATH, (c) => handleImageProxyRequest(c.req.url, c.env.IMAGE_PROXY_KEY));
+
+interface GitHubEmail {
+	email: string;
+	primary: boolean;
+	verified: boolean;
+}
+
+/**
+ * Picks the GitHub address that may name an account: only addresses GitHub marks verified count.
+ * The public address if it is verified, else the verified primary, else any verified address
+ * (the same rule as doauth's client-worker and gh-oidc-worker, and algorand-remote-mcp).
+ * @returns The address, or "" when the account has no verified address
+ */
+export function pickVerifiedGitHubEmail(emails: unknown, publicEmail?: string | null): string {
+	const verified = Array.isArray(emails)
+		? (emails as GitHubEmail[]).filter((e) => e?.verified === true && !!e.email)
+		: [];
+	const pick =
+		verified.find((e) => !!publicEmail && e.email === publicEmail) ??
+		verified.find((e) => e.primary) ??
+		verified[0];
+	return pick?.email || "";
+}
 
 export { app as OauthHandler };

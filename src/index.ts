@@ -6,6 +6,7 @@ import { ResponseProcessor } from './utils';
 import OAuthProvider from "./oauth-provider";
 import { OauthHandler } from "./oauth-handler";
 import {
+  checkSubjectBinding,
   ensureUserAccount,
 } from './utils/vaultManager';
 // import * as algosdk from 'algosdk';
@@ -57,7 +58,6 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 		console.log("Initializing Algorand Remote MCP...");
 		console.log("Current state:", this.state);
 		console.log("Props name:", this.props?.name);
-		console.log("Props email:", this.props?.email);
 		// Set provider in state if available in props
 	
 		console.log("Props User ID:", this.props?.id);
@@ -71,9 +71,15 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 			if (!props?.email || !props?.provider) {
 				throw new Error('Email and provider must be provided in props');
 			}
-			console.log(`Ensuring user account for ${props.email} with provider ${props.provider}`);
-			const accType = await ensureUserAccount(this.env, props.email, props.provider);
-			console.log(`User ${props.email} has a ${accType}-based account on ${props.provider} provider`);
+			// Every tool uses the account named by these props, and none is registered until this check
+			// passes: the account must belong to this provider user (a recycled email or X handle must
+			// not inherit someone else's wallet)
+			const subjectProblem = await checkSubjectBinding(this.env, props.provider, props.email, props.id);
+			if (subjectProblem) {
+				throw new Error(subjectProblem);
+			}
+			const accType = await ensureUserAccount(this.env, props.email, props.provider, props.id);
+			console.log(`User has a ${accType}-based account on the ${props.provider} provider`);
 		} catch (error: any) {
 			throw new Error(`Failed to ensure user account: ${error.message || 'Unknown error'}`);
 		}
@@ -270,6 +276,15 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
 // 	},
 // };
 
+/**
+ * Grants created before this time are refused at refresh and deleted. One cutoff for the whole dOAuth
+ * protocol (decision D3, 2026-11-20): the same date in all three servers that share the token store,
+ * just after algorand-remote-mcp's login fix went live (ae36536, deployed 2026-11-20 16:34:26 UTC),
+ * with half a minute for the rollout. Not exported: named exports of the main module must be
+ * classes or handlers.
+ */
+const GRANTS_ISSUED_BEFORE = Math.floor(Date.parse("2026-11-20T16:35:00Z") / 1000);
+
 export default new OAuthProvider({
 	apiHandler: AlgorandRemoteMCPLite.mount("/sse", {
 		binding: "AlgorandRemoteMCPLite"
@@ -279,5 +294,10 @@ export default new OAuthProvider({
 	clientRegistrationEndpoint: "/register",
 	defaultHandler: OauthHandler as any,
 	tokenEndpoint: "/token",
+	grantsIssuedBefore: GRANTS_ISSUED_BEFORE,
+	// This server has always added the client ID to the client redirect when a state is present
+	clientRedirectParams: (_props, request) => ({
+		client: request.state ? request.clientId : undefined,
+	}),
 });
 

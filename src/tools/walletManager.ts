@@ -17,7 +17,8 @@ import {
   /* ensureUserAccount, */
   deleteKeypair,
   deleteEntity,
-  createNewEntity
+  createNewEntity,
+  subjectBindingKey
 } from '../utils/vaultManager';
 // import { log } from 'console';
 // import { email } from 'zod/v4';
@@ -151,10 +152,15 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           await env.VAULT_ENTITIES.delete(providerEmail);
           console.log(`Deleted entity ID for ${providerEmail} from KV store`);
           await env.VAULT_ENTITIES.delete(providerEntity);
+          // The Vault worker deletes this binding itself from its fix #7 on; deleting it here too is harmless
+          await env.VAULT_ENTITIES.delete(subjectBindingKey(props.provider, entityId));
           console.log(`Deleted entity ID ${providerEntity} from KV store`);
-          console.log(`Cleared public key cache for user: ${props.email}`);
           const entityResult = await createNewEntity(env, props.email, props.provider);
-          console.log(`New entity created: ${entityResult}`);
+          console.log('New entity created:', { provider: props.provider, entityId: entityResult.entityId });
+          if (entityResult.success && entityResult.entityId && props.id) {
+            // The new account belongs to the same provider user (see checkSubjectBinding)
+            await env.VAULT_ENTITIES.put(subjectBindingKey(props.provider, entityResult.entityId), String(props.id));
+          }
           await new Promise(resolve => setTimeout(resolve, 500));
           const keypairResult = await createKeypair(env, props.email, props.provider);
 
