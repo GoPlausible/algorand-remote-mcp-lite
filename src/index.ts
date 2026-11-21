@@ -4,7 +4,7 @@ import { getUiCapability, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-a
 import { type Env, type State, type Props } from './types';
 import { ResponseProcessor } from './utils';
 import OAuthProvider from "./oauth-provider";
-import { OauthHandler } from "./oauth-handler";
+import { DefaultHandler } from "./default-handler";
 import {
   checkSubjectBinding,
   ensureUserAccount,
@@ -33,7 +33,11 @@ import { registerSkillResource } from './resources';
 
 
 // Define our MCP agent with tools
-export class AlgorandRemoteMCPLite extends McpAgent<Env, State, Props> {
+// The Durable Object class behind PENDING_LOGINS must be exported from the main module
+export { PendingLogins } from "./pending-logins";
+
+// agents 0.8 requires the Env to fit the generated Cloudflare.Env (worker-configuration.d.ts)
+export class AlgorandRemoteMCPLite extends McpAgent<Env & Cloudflare.Env, State, Props> {
 	server = new McpServer({
 		name: "Algorand Remote MCP Lite",
 		version: "1.9.5",
@@ -292,7 +296,7 @@ export default new OAuthProvider({
 	apiRoute: "/sse",
 	authorizeEndpoint: "/authorize",
 	clientRegistrationEndpoint: "/register",
-	defaultHandler: OauthHandler as any,
+	defaultHandler: DefaultHandler as any,
 	tokenEndpoint: "/token",
 	grantsIssuedBefore: GRANTS_ISSUED_BEFORE,
 	// This server has always added the client ID to the client redirect when a state is present

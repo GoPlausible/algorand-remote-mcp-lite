@@ -1,366 +1,411 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-// src/oauth-provider.ts imports WorkerEntrypoint from the Workers runtime, which Node lacks
-vi.mock('cloudflare:workers', () => ({ WorkerEntrypoint: class {} }));
-
-import OAuthProvider from '../src/oauth-provider';
-import { OauthHandler } from '../src/oauth-handler';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import OAuthProvider, { redirectUriProblem } from "../src/oauth-provider";
+import {
+	type FetchCall,
+	REDIRECT,
+	VERIFIER,
+	call,
+	defaultWorld,
+	exchangeCode,
+	installUpstream,
+	loginForCode,
+	loginForTokens,
+	makeEnv,
+	providerOptions,
+	register,
+	registerClient,
+} from "./oauthTestKit";
 
 /**
- * End-to-end tests through the real OAuthProvider (src/oauth-provider.ts) with the real
- * OauthHandler as its default handler: dynamic client registration rules, the token endpoint's
- * redirect_uri binding and PKCE method handling, unwrapToken, and the authenticated /logout.
- * Only the upstream identity provider (Google) is stubbed.
+ * The provider side, through the real OAuthProvider and OauthHandler. Items from
+ * .claude/notes/doauth-protocol-fixes.md: M3 (registration rules and rate limit), D1 (PKCE S256 at
+ * /token), H1 (grant cutoff), C3 (completeAuthorization re-checks the request), C4 (authenticated
+ * /logout, with unwrapToken).
  */
 
-const BASE = 'https://algorandmcplite.goplausible.xyz';
-const REDIRECT = 'https://client.example/cb';
-const VERIFIER = `${'v'.repeat(43)}erifier-for-pkce-tests-0123456789`;
-
-function memoryKV() {
-  const store = new Map<string, string>();
-  return {
-    store,
-    async get(key: string, opts?: unknown) {
-      const value = store.get(key);
-      if (value === undefined) return null;
-      const json = opts === 'json' || (typeof opts === 'object' && opts !== null && (opts as { type?: string }).type === 'json');
-      return json ? JSON.parse(value) : value;
-    },
-    async put(key: string, value: string) {
-      store.set(key, value);
-    },
-    async delete(key: string) {
-      store.delete(key);
-    },
-    async list(options: { prefix?: string } = {}) {
-      const keys = [...store.keys()].filter((k) => k.startsWith(options.prefix ?? '')).sort().map((name) => ({ name }));
-      return { keys, list_complete: true, cursor: undefined };
-    },
-  };
-}
-
-const provider = new OAuthProvider({
-  apiRoute: '/sse',
-  apiHandler: { fetch: async () => new Response('api ok') } as any,
-  defaultHandler: OauthHandler as any,
-  authorizeEndpoint: '/authorize',
-  tokenEndpoint: '/token',
-  clientRegistrationEndpoint: '/register',
-});
-
-const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as any;
+const provider = new OAuthProvider(providerOptions());
 
 let env: any;
-let upstreamCalls: { url: string; body: string }[];
+let calls: FetchCall[];
 
 beforeEach(() => {
-  env = {
-    OAUTH_KV: memoryKV(),
-    CODE_VERIFIER_KV: memoryKV(),
-    GOOGLE_CLIENT_ID: 'google-id',
-    GOOGLE_CLIENT_SECRET: 'google-secret',
-  };
-  upstreamCalls = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input instanceof Request ? input.url : input);
-      upstreamCalls.push({ url, body: String(init?.body ?? '') });
-      if (url.startsWith('https://accounts.google.com/o/oauth2/token')) return Response.json({ access_token: 'google-access-token' });
-      if (url.startsWith('https://www.googleapis.com/oauth2/v2/userinfo')) {
-        return Response.json({ id: 'google-user-1', name: 'Alice', email: 'alice@example.com' });
-      }
-      if (url.startsWith('https://oauth2.googleapis.com/revoke')) return new Response('', { status: 200 });
-      throw new Error(`unexpected fetch ${url}`);
-    }),
-  );
+	env = makeEnv();
+	calls = installUpstream(defaultWorld());
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 });
 
-async function call(path: string, init: RequestInit = {}, cookies?: Map<string, string>) {
-  const headers = new Headers(init.headers);
-  if (cookies?.size) headers.set('Cookie', [...cookies].map(([k, v]) => `${k}=${v}`).join('; '));
-  const res = await provider.fetch(new Request(`${BASE}${path}`, { ...init, headers }), env, ctx);
-  if (cookies) {
-    for (const line of res.headers.getSetCookie()) {
-      const [pair, ...attrs] = line.split(';').map((s) => s.trim());
-      const eq = pair.indexOf('=');
-      if (attrs.some((a) => a.toLowerCase() === 'max-age=0')) cookies.delete(pair.slice(0, eq));
-      else cookies.set(pair.slice(0, eq), pair.slice(eq + 1));
-    }
-  }
-  return res;
-}
+describe("M3: client registration", () => {
+	const error = async (res: Response) => ((await res.json()) as { error: string }).error;
 
-function register(redirectUris: unknown[], extra: Record<string, unknown> = {}) {
-  return call('/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ redirect_uris: redirectUris, token_endpoint_auth_method: 'none', client_name: 'Test', ...extra }),
-  });
-}
+	// The protocol's rule, the same on all three servers: https, or http on a loopback host (the MCP
+	// authorization spec: "All redirect URIs MUST be either localhost or use HTTPS")
+	it("accepts https and loopback http", async () => {
+		for (const uri of [
+			"https://client.example/cb",
+			"http://localhost:3000/cb",
+			"http://127.0.0.1:8080/cb",
+			"http://[::1]/cb",
+		]) {
+			expect((await register(provider, env, [uri])).status, uri).toBe(201);
+		}
+	});
 
-async function s256(verifier: string) {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-  return btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
+	it("refuses redirect URIs with invalid_redirect_uri", async () => {
+		for (const uri of [
+			"javascript:alert(1)",
+			"data:text/html,hi",
+			"vbscript:msgbox",
+			"file:///etc/passwd",
+			"blob:https://client.example/x",
+			"about:blank",
+			"http://client.example/cb",
+			"https://client.example/cb#frag",
+			"/relative/cb",
+		]) {
+			const res = await register(provider, env, [REDIRECT, uri]);
+			expect(res.status, uri).toBe(400);
+			expect(await error(res), uri).toBe("invalid_redirect_uri");
+		}
+		expect([...env.OAUTH_KV.m.keys()].filter((k) => k.startsWith("client:"))).toHaveLength(0);
+	});
 
-/** Registers a public client and runs the browser part of the flow; returns the issued code. */
-async function issueCode(opts: { sendRedirectUri?: boolean } = {}) {
-  const clientId = ((await (await register([REDIRECT])).json()) as { client_id: string }).client_id;
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: clientId,
-    state: 'client-state',
-    code_challenge: await s256(VERIFIER),
-    code_challenge_method: 'S256',
-  });
-  if (opts.sendRedirectUri !== false) params.set('redirect_uri', REDIRECT);
-  const cookies = new Map<string, string>();
-  const consentPage = await (await call(`/authorize?${params}`, {}, cookies)).text();
-  const consentToken = consentPage.match(/name="consent_token" value="([0-9a-f]{64})"/)?.[1] as string;
-  const toGoogle = await call(
-    '/authorize',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ consent_token: consentToken, provider: 'google' }).toString(),
-    },
-    cookies,
-  );
-  const state = new URL(toGoogle.headers.get('location') as string).searchParams.get('state') as string;
-  const back = await call(`/callback?code=google-code&state=${state}`, {}, cookies);
-  const location = new URL(back.headers.get('location') as string);
-  expect(location.origin + location.pathname).toBe(REDIRECT);
-  return { clientId, code: location.searchParams.get('code') as string };
-}
+	it("refuses app schemes and user information with invalid_redirect_uri", async () => {
+		for (const uri of [
+			"com.example.app:/oauth/cb",
+			"cursor://anysphere.cursor-mcp/oauth/callback",
+			"exp://192.168.1.20:8081/--/oauth",
+			"https://claude.ai@evil.example/cb",
+		]) {
+			const res = await register(provider, env, [REDIRECT, uri]);
+			expect(res.status, uri).toBe(400);
+			expect(await error(res), uri).toBe("invalid_redirect_uri");
+		}
+		expect([...env.OAUTH_KV.m.keys()].filter((k) => k.startsWith("client:"))).toHaveLength(0);
+	});
 
-function exchange(fields: Record<string, string>) {
-  return call('/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'authorization_code', ...fields }).toString(),
-  });
-}
+	it("refuses page, logo and key-set URLs that are not http(s), with invalid_client_metadata", async () => {
+		for (const field of ["client_uri", "logo_uri", "policy_uri", "tos_uri", "jwks_uri"]) {
+			const res = await register(provider, env, [REDIRECT], {
+				[field]: "javascript:alert(1)",
+			});
+			expect(res.status, field).toBe(400);
+			expect(await error(res), field).toBe("invalid_client_metadata");
+		}
+		const ok = await register(provider, env, [REDIRECT], {
+			client_uri: "https://client.example",
+			tos_uri: "https://client.example/tos",
+		});
+		expect(ok.status).toBe(201);
+	});
 
-describe('dynamic client registration', () => {
-  it('accepts https and loopback http redirect URIs', async () => {
-    for (const uri of [REDIRECT, 'http://localhost:3000/cb', 'http://127.0.0.1:53111/callback', 'http://[::1]:8080/cb']) {
-      const res = await register([uri]);
-      expect(res.status, uri).toBe(201);
-    }
-  });
+	it("allows 10 registrations per minute from one address, then answers 429 with Retry-After", async () => {
+		const from = (ip: string) =>
+			register(provider, env, [REDIRECT], {}, { "CF-Connecting-IP": ip });
+		for (let i = 0; i < 10; i++) expect((await from("198.51.100.7")).status).toBe(201);
+		const limited = await from("198.51.100.7");
+		expect(limited.status).toBe(429);
+		expect(limited.headers.get("Retry-After")).toBe("60");
+		expect((await from("198.51.100.8")).status).toBe(201);
+	});
 
-  // Registration follows the protocol's shared rule (the master oauth-provider.ts, synced from
-  // doauth). Private-use schemes such as cursor:// are still accepted there, pending the owner's
-  // decision; this server's /authorize refuses them (redirectUriProblem in utils/oauthFlow.ts).
-  it('rejects non-loopback http, fragments, user information, dangerous schemes and non-URIs', async () => {
-    const bad = [
-      'http://203.0.113.7/cb',
-      'http://client.example/cb',
-      'https://client.example/cb#frag',
-      'https://client.example/cb#',
-      'javascript:alert(1)',
-      'data:text/html,hi',
-      'file:///etc/passwd',
-      'not a uri',
-      'https://claude.ai@evil.example/cb',
-      'https://user:pass@client.example/cb',
-    ];
-    for (const uri of bad) {
-      const res = await register([REDIRECT, uri]);
-      expect(res.status, uri).toBe(400);
-      expect(((await res.json()) as { error: string }).error).toBe('invalid_redirect_uri');
-    }
-    expect([...env.OAUTH_KV.store.keys()].filter((k: string) => k.startsWith('client:'))).toEqual([]);
-  });
+	it("explains each refused redirect URI", () => {
+		expect(redirectUriProblem("https://client.example/cb")).toBeNull();
+		expect(redirectUriProblem("http://evil.example/cb")).toMatch(/https/);
+		expect(redirectUriProblem("https://client.example/cb#x")).toMatch(/fragment/);
+		expect(redirectUriProblem("javascript:alert(1)")).toMatch(/https/);
+		expect(redirectUriProblem("com.example.app:/cb")).toMatch(/https/);
+		expect(redirectUriProblem("https://u@client.example/cb")).toMatch(/user information/);
+	});
 });
 
-describe('token endpoint', () => {
-  // The protocol's rule (master oauth-provider.ts): a redirect_uri sent to /token must be the one
-  // the code was issued for (RFC 6749 §4.1.3); sending it is optional (OAuth 2.1 draft 17 §10.2),
-  // since PKCE with S256 is required
-  it('refuses a different redirect_uri and accepts the identical one or none', async () => {
-    const { clientId, code } = await issueCode();
-    const wrong = await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: 'https://client.example/other' });
-    expect(wrong.status).toBe(400);
-    expect(((await wrong.json()) as { error: string }).error).toBe('invalid_grant');
+describe("D1: PKCE with S256 at /token", () => {
+	it("advertises S256 only", async () => {
+		const res = await call(provider, env, "/.well-known/oauth-authorization-server");
+		const metadata = (await res.json()) as { code_challenge_methods_supported: string[] };
+		expect(metadata.code_challenge_methods_supported).toEqual(["S256"]);
+	});
 
-    const ok = await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: REDIRECT });
-    expect(ok.status).toBe(200);
-    expect(((await ok.json()) as { access_token: string }).access_token).toBeTruthy();
+	/** Issues a code, then rewrites its grant as another server's (shared store) might have it */
+	async function codeWithGrant(clientId: string, edit: (grant: any) => void) {
+		const code = await loginForCode(provider, env, clientId);
+		const [userId, grantId] = code.split(":");
+		const key = `grant:${userId}:${grantId}`;
+		const grant = JSON.parse(env.OAUTH_KV.m.get(key));
+		edit(grant);
+		env.OAUTH_KV.m.set(key, JSON.stringify(grant));
+		return code;
+	}
 
-    const second = await issueCode();
-    const omitted = await exchange({ code: second.code, client_id: second.clientId, code_verifier: VERIFIER });
-    expect(omitted.status).toBe(200);
-  });
+	it("exchanges a code with the right verifier", async () => {
+		const clientId = await registerClient(provider, env);
+		const code = await loginForCode(provider, env, clientId);
+		const res = await exchangeCode(provider, env, clientId, code, VERIFIER);
+		expect(res.status).toBe(200);
+	});
 
-  it('does not require redirect_uri when the authorization request omitted it', async () => {
-    const { clientId, code } = await issueCode({ sendRedirectUri: false });
-    const ok = await exchange({ code, client_id: clientId, code_verifier: VERIFIER });
-    expect(ok.status).toBe(200);
-  });
+	it("refuses a wrong or missing verifier", async () => {
+		const clientId = await registerClient(provider, env);
+		const code = await loginForCode(provider, env, clientId);
+		const wrong = await exchangeCode(provider, env, clientId, code, `${VERIFIER}x`);
+		expect(((await wrong.json()) as { error: string }).error).toBe("invalid_grant");
+		const missing = await exchangeCode(provider, env, clientId, code);
+		expect(((await missing.json()) as { error: string }).error).toBe("invalid_request");
+	});
 
-  it('rejects a wrong PKCE verifier and accepts no method other than S256', async () => {
-    const { clientId, code } = await issueCode();
-    const wrongVerifier = await exchange({ code, client_id: clientId, code_verifier: `${VERIFIER}x`, redirect_uri: REDIRECT });
-    expect(wrongVerifier.status).toBe(400);
+	it("refuses a code issued without PKCE", async () => {
+		const clientId = await registerClient(provider, env);
+		const code = await codeWithGrant(clientId, (g) => {
+			g.codeChallenge = undefined;
+			g.codeChallengeMethod = undefined;
+		});
+		const res = await exchangeCode(provider, env, clientId, code);
+		expect(res.status).toBe(400);
+		expect(((await res.json()) as { error: string }).error).toBe("invalid_grant");
+	});
 
-    // Grants carrying plain or an unknown method (only reachable through the helper API) must not
-    // verify: the challenge itself, as seen in the authorization URL, must not work as the verifier
-    for (const [i, method] of ['plain', 'S512'].entries()) {
-      const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
-        request: {
-          responseType: 'code', clientId, redirectUri: REDIRECT, scope: [], state: 's',
-          codeChallenge: 'the-challenge', codeChallengeMethod: method, redirectUriInRequest: true,
-        },
-        userId: `u2-${i}`, metadata: {}, scope: [], props: { provider: 'google', accessToken: 't' },
-      });
-      const oddCode = new URL(redirectTo).searchParams.get('code') as string;
-      const res = await exchange({ code: oddCode, client_id: clientId, code_verifier: 'the-challenge', redirect_uri: REDIRECT });
-      expect(res.status, method).toBe(400);
-      expect(((await res.json()) as { error_description: string }).error_description).toContain('Unsupported');
-    }
-
-    const metadata = (await (await call('/.well-known/oauth-authorization-server')).json()) as Record<string, unknown>;
-    expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
-  });
-
-  it('rejects a code whose authorization request had no code_challenge (OAuth 2.1 §4.1.3)', async () => {
-    const { clientId } = await issueCode();
-    const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
-      request: { responseType: 'code', clientId, redirectUri: REDIRECT, scope: [], state: 's', redirectUriInRequest: true },
-      userId: 'u3', metadata: {}, scope: [], props: { provider: 'google', accessToken: 't' },
-    });
-    const code = new URL(redirectTo).searchParams.get('code') as string;
-    const res = await exchange({ code, client_id: clientId, redirect_uri: REDIRECT });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; error_description: string };
-    expect(body.error).toBe('invalid_grant');
-    expect(body.error_description).toContain('without PKCE');
-  });
-
-  it('implements RFC 7009 revocation: 200, only by the owning client', async () => {
-    const { clientId, code } = await issueCode();
-    const issued = (await (await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: REDIRECT })).json()) as {
-      access_token: string;
-    };
-    const otherClient = ((await (await register([REDIRECT])).json()) as { client_id: string }).client_id;
-    const revoke = (fields: Record<string, string>) =>
-      call('/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(fields).toString(),
-      });
-
-    const foreign = await revoke({ token: issued.access_token, client_id: otherClient });
-    expect(foreign.status).toBe(400);
-    expect(((await foreign.json()) as { error: string }).error).toBe('invalid_grant');
-    expect(await env.OAUTH_PROVIDER.unwrapToken(issued.access_token)).not.toBeNull();
-
-    expect((await revoke({ token: issued.access_token, client_id: clientId })).status).toBe(200);
-    expect(await env.OAUTH_PROVIDER.unwrapToken(issued.access_token)).toBeNull();
-    expect((await revoke({ token: 'unknown:token:value', client_id: clientId })).status).toBe(200);
-
-    const metadata = (await (await call('/.well-known/oauth-authorization-server')).json()) as Record<string, unknown>;
-    expect(metadata.revocation_endpoint_auth_methods_supported).toEqual(['client_secret_basic', 'client_secret_post', 'none']);
-  });
+	it("refuses a code issued with plain PKCE, even with the matching verifier", async () => {
+		const clientId = await registerClient(provider, env);
+		const code = await codeWithGrant(clientId, (g) => {
+			g.codeChallenge = VERIFIER;
+			g.codeChallengeMethod = "plain";
+		});
+		const res = await exchangeCode(provider, env, clientId, code, VERIFIER);
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as { error: string; error_description: string };
+		expect(body.error).toBe("invalid_grant");
+		expect(body.error_description).toMatch(/Unsupported PKCE code_challenge_method/);
+	});
 });
 
-describe('redirect URIs at sign-in', () => {
-  it('holds clients registered under older rules to the current redirect URI rules', async () => {
-    const legacy = { clientId: 'legacy-client', redirectUris: ['cursor://anysphere.cursor-mcp/oauth/callback', 'http://10.0.0.5/cb'], tokenEndpointAuthMethod: 'none' };
-    env.OAUTH_KV.store.set('client:legacy-client', JSON.stringify(legacy));
-    for (const uri of legacy.redirectUris) {
-      const params = new URLSearchParams({ response_type: 'code', client_id: 'legacy-client', redirect_uri: uri, code_challenge: 'c', code_challenge_method: 'S256' });
-      expect((await call(`/authorize?${params}`)).status, uri).toBe(400);
-    }
-  });
+describe("H1: grants issued before the cutoff", () => {
+	const CUTOFF = Math.floor(Date.parse("2026-11-07T21:22:16Z") / 1000);
+	const withCutoff = new OAuthProvider(providerOptions({ grantsIssuedBefore: CUTOFF }));
 
-  it('shows an international redirect host in punycode on the consent page', async () => {
-    const idn = 'https://clаude.ai/api/mcp/auth_callback'; // Cyrillic "а"
-    const clientId = ((await (await register([idn])).json()) as { client_id: string }).client_id;
-    const params = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: idn, code_challenge: 'c', code_challenge_method: 'S256' });
-    const html = await (await call(`/authorize?${params}`)).text();
-    expect(html).toContain('<strong>xn--clude-5ve.ai</strong>');
-    expect(html).not.toContain('clаude.ai');
-  });
+	async function session(createdAt: number | undefined) {
+		const clientId = await registerClient(withCutoff, env);
+		const tokens = await loginForTokens(withCutoff, env, clientId);
+		const [userId, grantId] = tokens.refresh_token.split(":");
+		const key = `grant:${userId}:${grantId}`;
+		const grant = JSON.parse(env.OAUTH_KV.m.get(key));
+		if (createdAt === undefined) grant.createdAt = undefined;
+		else grant.createdAt = createdAt;
+		env.OAUTH_KV.m.set(key, JSON.stringify(grant));
+		return { clientId, key, refresh: tokens.refresh_token };
+	}
+
+	const refresh = (clientId: string, refreshToken: string) =>
+		call(withCutoff, env, "/token", {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({
+				grant_type: "refresh_token",
+				refresh_token: refreshToken,
+				client_id: clientId,
+			}),
+		});
+
+	it("refuses and deletes a grant created before the cutoff", async () => {
+		const s = await session(CUTOFF - 1);
+		const res = await refresh(s.clientId, s.refresh);
+		expect(res.status).toBe(400);
+		expect(((await res.json()) as { error: string }).error).toBe("invalid_grant");
+		expect(env.OAUTH_KV.m.has(s.key)).toBe(false);
+		expect((await refresh(s.clientId, s.refresh)).status).toBe(400);
+	});
+
+	it("counts a grant without createdAt as older than the cutoff", async () => {
+		const s = await session(undefined);
+		expect((await refresh(s.clientId, s.refresh)).status).toBe(400);
+		expect(env.OAUTH_KV.m.has(s.key)).toBe(false);
+	});
+
+	it("refreshes a grant created at or after the cutoff", async () => {
+		const s = await session(CUTOFF);
+		const res = await refresh(s.clientId, s.refresh);
+		expect(res.status).toBe(200);
+		expect(((await res.json()) as { access_token: string }).access_token).toBeTruthy();
+	});
+
+	it("refreshes any grant when no cutoff is set", async () => {
+		const clientId = await registerClient(provider, env);
+		const tokens = await loginForTokens(provider, env, clientId);
+		const res = await call(provider, env, "/token", {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+			body: new URLSearchParams({
+				grant_type: "refresh_token",
+				refresh_token: tokens.refresh_token,
+				client_id: clientId,
+			}),
+		});
+		expect(res.status).toBe(200);
+	});
 });
 
-describe('unwrapToken and /logout', () => {
-  async function tokens() {
-    const { clientId, code } = await issueCode();
-    const res = await exchange({ code, client_id: clientId, code_verifier: VERIFIER, redirect_uri: REDIRECT });
-    return (await res.json()) as { access_token: string; refresh_token: string };
-  }
+describe("C3: completeAuthorization re-checks the request", () => {
+	// A default handler that hands completeAuthorization whatever request it is given
+	const probe = new OAuthProvider(
+		providerOptions({
+			defaultHandler: {
+				async fetch(request: Request, env: any) {
+					const request_ = (await request.json()) as Record<string, unknown>;
+					try {
+						const result = await env.OAUTH_PROVIDER.completeAuthorization({
+							request: {
+								responseType: "code",
+								scope: [],
+								state: "s",
+								codeChallenge: "c",
+								codeChallengeMethod: "S256",
+								...request_,
+							},
+							userId: "u1",
+							metadata: {},
+							scope: [],
+							props: { id: "u1" },
+						});
+						return Response.json(result);
+					} catch (error) {
+						return new Response((error as Error).message, { status: 500 });
+					}
+				},
+			} as any,
+		}),
+	);
 
-  it('unwrapToken returns the owner and props of a valid token, and null otherwise', async () => {
-    const { access_token } = await tokens();
-    const summary = await env.OAUTH_PROVIDER.unwrapToken(access_token);
-    expect(summary.userId).toBe('google-user-1');
-    expect(summary.props.email).toBe('alice@example.com');
-    expect(summary.props.accessToken).toBe('google-access-token');
-    expect(await env.OAUTH_PROVIDER.unwrapToken('nope')).toBeNull();
-    expect(await env.OAUTH_PROVIDER.unwrapToken(`${access_token}x`)).toBeNull();
+	const complete = (request: Record<string, unknown>) =>
+		call(probe, env, "/complete", { method: "POST", body: JSON.stringify(request) });
 
-    // Expired
-    const key = [...env.OAUTH_KV.store.keys()].find((k: string) => k.startsWith('token:')) as string;
-    const record = JSON.parse(env.OAUTH_KV.store.get(key));
-    env.OAUTH_KV.store.set(key, JSON.stringify({ ...record, expiresAt: 1 }));
-    expect(await env.OAUTH_PROVIDER.unwrapToken(access_token)).toBeNull();
-  });
+	it("refuses an unknown client", async () => {
+		const res = await complete({ clientId: "nope", redirectUri: REDIRECT });
+		expect(await res.text()).toMatch(/unknown client/);
+	});
 
-  it('refuses unauthenticated, query-parameter and GET requests without touching anything', async () => {
-    const { access_token } = await tokens();
-    const before = [...env.OAUTH_KV.store.keys()].sort();
-    const clientKey = before.find((k) => k.startsWith('client:')) as string;
-    const clientId = clientKey.slice('client:'.length);
+	it("refuses a redirect URI the client did not register", async () => {
+		const clientId = await registerClient(probe, env);
+		const res = await complete({ clientId, redirectUri: "https://evil.example/cb" });
+		expect(res.status).toBe(500);
+		expect(await res.text()).toMatch(/not registered/);
+		expect([...env.OAUTH_KV.m.keys()].some((k) => k.startsWith("grant:"))).toBe(false);
+	});
 
-    // RFC 6750 §3: no credentials -> challenge without an error code; bad token -> invalid_token
-    const none = await call('/logout', { method: 'POST' });
-    expect(none.status).toBe(401);
-    expect(none.headers.get('www-authenticate')).toBe('Bearer realm="OAuth"');
-    const bad = await call('/logout', { method: 'POST', headers: { Authorization: 'Bearer nope' } });
-    expect(bad.status).toBe(401);
-    expect(bad.headers.get('www-authenticate')).toContain('error="invalid_token"');
-    // The old unauthenticated form: query parameters only
-    const legacy = await call(`/logout?provider=google&clientId=${clientId}&email=x&userId=g`, { method: 'POST' });
-    expect(legacy.status).toBe(401);
-    expect(legacy.headers.get('www-authenticate')).toBe('Bearer realm="OAuth"');
-    // GET is not a logout
-    const get = await call('/logout', { headers: { Authorization: `Bearer ${access_token}` } });
-    expect(get.status).not.toBe(200);
+	it("refuses the implicit flow while allowImplicitFlow is off", async () => {
+		const clientId = await registerClient(probe, env);
+		const res = await complete({ clientId, redirectUri: REDIRECT, responseType: "token" });
+		expect(await res.text()).toMatch(/unsupported response type/);
+		expect([...env.OAUTH_KV.m.keys()].some((k) => k.startsWith("token:"))).toBe(false);
+	});
 
-    expect([...env.OAUTH_KV.store.keys()].sort()).toEqual(before);
-  });
+	it("refuses a response type the client did not register", async () => {
+		const res = await register(probe, env, [REDIRECT], { response_types: ["none"] });
+		const { client_id } = (await res.json()) as { client_id: string };
+		const out = await complete({ clientId: client_id, redirectUri: REDIRECT });
+		expect(await out.text()).toMatch(/not registered for this client/);
+	});
 
-  it("revokes the caller's own grant, its tokens and the upstream token, and nothing else", async () => {
-    const mine = await tokens();
-    const other = await tokens(); // a second session (another grant) must survive
-    const otherGrant = (await env.OAUTH_PROVIDER.unwrapToken(other.access_token)).grantId;
-    const myGrant = (await env.OAUTH_PROVIDER.unwrapToken(mine.access_token)).grantId;
-    const clientsBefore = [...env.OAUTH_KV.store.keys()].filter((k: string) => k.startsWith('client:'));
+	it("completes a valid request", async () => {
+		const clientId = await registerClient(probe, env);
+		const res = await complete({ clientId, redirectUri: REDIRECT });
+		expect(res.status).toBe(200);
+		const { redirectTo } = (await res.json()) as { redirectTo: string };
+		expect(redirectTo.startsWith(`${REDIRECT}?code=`)).toBe(true);
+	});
+});
 
-    // The auth scheme is case-insensitive
-    const res = await call('/logout', { method: 'POST', headers: { Authorization: `bearer ${mine.access_token}` } });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, upstreamRevoked: true });
-    expect(upstreamCalls.some((c) => c.url.startsWith('https://oauth2.googleapis.com/revoke') && c.body.includes('google-access-token'))).toBe(true);
+describe("C4: /logout", () => {
+	const logout = (headers: Record<string, string> = {}, query = "", method = "POST") =>
+		call(provider, env, `/logout${query}`, { method, headers });
 
-    const keys = [...env.OAUTH_KV.store.keys()] as string[];
-    expect(keys.some((k) => k.includes(`:${myGrant}`))).toBe(false);
-    expect(keys.some((k) => k.includes(`:${otherGrant}`))).toBe(true);
-    expect(keys.filter((k) => k.startsWith('client:'))).toEqual(clientsBefore);
+	/** Logs Alice in, and seeds grants the logout must leave alone */
+	async function setup() {
+		const clientId = await registerClient(provider, env);
+		const tokens = await loginForTokens(provider, env, clientId);
+		const userId = "google-user-1";
+		const seed = (key: string, grant: Record<string, unknown>) =>
+			env.OAUTH_KV.m.set(
+				key,
+				JSON.stringify({ scope: [], createdAt: 1, encryptedProps: "", ...grant }),
+			);
+		seed(`grant:${userId}:other-client`, {
+			id: "other-client",
+			clientId: "another-client",
+			userId,
+			metadata: { provider: "google" },
+		});
+		seed(`grant:${userId}:github-user`, {
+			id: "github-user",
+			clientId,
+			userId,
+			metadata: { provider: "github" },
+		});
+		seed(`grant:${userId}2:longer-id`, {
+			id: "longer-id",
+			clientId,
+			userId: `${userId}2`,
+			metadata: { provider: "google" },
+		});
+		seed(`grant:${userId}:no-provider`, { id: "no-provider", clientId, userId, metadata: {} });
+		env.OAUTH_KV.m.set(`token:${userId}:no-provider:t1`, "{}");
+		return { clientId, tokens, userId };
+	}
 
-    // The revoked token no longer works, the other session still does
-    expect(await env.OAUTH_PROVIDER.unwrapToken(mine.access_token)).toBeNull();
-    expect(await env.OAUTH_PROVIDER.unwrapToken(other.access_token)).not.toBeNull();
-    expect((await call('/logout', { method: 'POST', headers: { Authorization: `Bearer ${mine.access_token}` } })).status).toBe(401);
-    expect((await call('/sse', { headers: { Authorization: `Bearer ${mine.access_token}` } })).status).toBe(401);
-    expect((await call('/sse', { headers: { Authorization: `Bearer ${other.access_token}` } })).status).toBe(200);
-  });
+	it("refuses a request without a bearer token, and deletes nothing", async () => {
+		const { clientId, userId } = await setup();
+		const before = [...env.OAUTH_KV.m.keys()].sort();
+		for (const method of ["GET", "POST"]) {
+			const res = await logout(
+				{},
+				`?provider=google&clientId=${clientId}&userId=${userId}&email=alice@example.com&token=x`,
+				method,
+			);
+			expect(res.status).toBe(401);
+			expect(res.headers.get("WWW-Authenticate")).toContain("invalid_token");
+		}
+		expect([...env.OAUTH_KV.m.keys()].sort()).toEqual(before);
+	});
+
+	it("refuses an unknown, malformed or expired token", async () => {
+		const { tokens } = await setup();
+		expect((await logout({ Authorization: "Bearer a:b:c" })).status).toBe(401);
+		expect((await logout({ Authorization: "Bearer not-a-token" })).status).toBe(401);
+
+		const tokenKey = [...env.OAUTH_KV.m.keys()].find(
+			(k: string) => k.startsWith("token:google-user-1:") && !k.includes("no-provider"),
+		) as string;
+		const record = JSON.parse(env.OAUTH_KV.m.get(tokenKey));
+		record.expiresAt = Math.floor(Date.now() / 1000) - 1;
+		env.OAUTH_KV.m.set(tokenKey, JSON.stringify(record));
+		expect((await logout({ Authorization: `Bearer ${tokens.access_token}` })).status).toBe(401);
+	});
+
+	it("revokes only the caller's grants for the token's client, and never the client", async () => {
+		const { clientId, tokens, userId } = await setup();
+		const [, ownGrantId] = tokens.access_token.split(":");
+
+		const res = await logout({ Authorization: `Bearer ${tokens.access_token}` });
+		expect(res.status).toBe(200);
+		expect(((await res.json()) as { success: boolean }).success).toBe(true);
+		// One Set-Cookie header per cookie (L2)
+		expect(res.headers.getSetCookie()).toHaveLength(2);
+
+		const keys = [...env.OAUTH_KV.m.keys()] as string[];
+		expect(keys).not.toContain(`grant:${userId}:${ownGrantId}`);
+		expect(keys.some((k) => k.startsWith(`token:${userId}:${ownGrantId}:`))).toBe(false);
+		expect(keys).not.toContain(`grant:${userId}:no-provider`);
+		expect(keys).not.toContain(`token:${userId}:no-provider:t1`);
+		expect(keys).toContain(`grant:${userId}:other-client`);
+		expect(keys).toContain(`grant:${userId}:github-user`);
+		expect(keys).toContain(`grant:${userId}2:longer-id`);
+		expect(keys).toContain(`client:${clientId}`);
+
+		const revoke = calls.find((c) => c.url.startsWith("https://oauth2.googleapis.com/revoke"));
+		expect(new URLSearchParams(revoke?.body).get("token")).toBe("google-access-token");
+
+		// The token is gone with its grant
+		expect((await logout({ Authorization: `Bearer ${tokens.access_token}` })).status).toBe(401);
+	});
 });

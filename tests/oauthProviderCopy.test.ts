@@ -3,21 +3,32 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * src/oauth-provider.ts is a synced copy of the dOAuth protocol's master
- * (doauth/client-worker/src/oauth-provider.ts, decision D2). Every server on the shared token store
- * runs the same bytes, so the copy must never be edited here.
+ * These files are synced copies, never edited here (decision D2, 2026-11-20; the login layer
+ * 2026-11-21: all dOAuth servers work the same):
+ * - oauth-provider.ts, the protocol's master in doauth/client-worker/src;
+ * - oauth-handler.ts, workers-oauth-utils.ts, pending-logins.ts and utils/vaultManager.ts, the MCP
+ *   login and account layers, whose master is algorand-remote-mcp/src.
+ * doauth's scripts/sync-oauth-provider.mjs copies them and records each hash beside the copy.
  */
-describe("oauth-provider.ts copy", () => {
-	it("matches the hash recorded when it was synced from doauth's master", () => {
-		const copy = readFileSync(new URL("../src/oauth-provider.ts", import.meta.url));
+const SYNCED = [
+	["oauth-provider.ts", "doauth/client-worker/src/oauth-provider.ts"],
+	["oauth-handler.ts", "algorand-remote-mcp/src/oauth-handler.ts"],
+	["workers-oauth-utils.ts", "algorand-remote-mcp/src/workers-oauth-utils.ts"],
+	["pending-logins.ts", "algorand-remote-mcp/src/pending-logins.ts"],
+	["utils/vaultManager.ts", "algorand-remote-mcp/src/utils/vaultManager.ts"],
+] as const;
+
+describe("synced dOAuth files", () => {
+	it.each(SYNCED)("%s matches the hash recorded when it was synced", (file, master) => {
+		const copy = readFileSync(new URL(`../src/${file}`, import.meta.url));
 		const recorded = readFileSync(
-			new URL("../src/oauth-provider.sha256", import.meta.url),
+			new URL(`../src/${file.replace(/\.ts$/, ".sha256")}`, import.meta.url),
 			"utf8",
 		).trim();
 		const actual = createHash("sha256").update(copy).digest("hex");
 		expect(
 			actual,
-			"src/oauth-provider.ts was edited locally: edit doauth/client-worker/src/oauth-provider.ts instead, then run node scripts/sync-oauth-provider.mjs in doauth",
+			`src/${file} was edited locally: edit ${master} instead, then run node scripts/sync-oauth-provider.mjs in doauth`,
 		).toBe(recorded);
 	});
 });

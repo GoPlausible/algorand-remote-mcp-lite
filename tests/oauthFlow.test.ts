@@ -1,517 +1,521 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OauthHandler, pickVerifiedGitHubEmail } from '../src/oauth-handler';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pickVerifiedGitHubEmail } from "../src/oauth-handler";
+import OAuthProvider from "../src/oauth-provider";
+import { AUTHORIZE_COOKIE, LOGIN_COOKIE } from "../src/workers-oauth-utils";
 import {
-  consentCookieName,
-  consumeConsent,
-  consumeUpstreamState,
-  createConsent,
-  createUpstreamState,
-  randomToken,
-  readCookie,
-  resolveRedirectUri,
-  stateCookieName,
-} from '../src/utils/oauthFlow';
+	BASE,
+	type FetchCall,
+	type Jar,
+	REDIRECT,
+	type UpstreamWorld,
+	authorizeQuery,
+	call,
+	defaultWorld,
+	dialogState,
+	installUpstream,
+	loginForCode,
+	makeEnv,
+	providerOptions,
+	registerClient,
+	s256,
+	startLogin,
+} from "./oauthTestKit";
 
 /**
- * Tests for the browser-bound OAuth flow state (src/utils/oauthFlow.ts) and the
- * /authorize and /callback routes in src/oauth-handler.ts.
+ * The browser side of the login, through the real OAuthProvider and OauthHandler, with the
+ * providers stubbed. Items from .claude/notes/doauth-protocol-fixes.md: C1 (state kept on the
+ * server, single use, bound to the browser), C2 (/authorize validation), H2 (the provider picker),
+ * L1 (X PKCE verifier per login), L2 (one Set-Cookie header per cookie), M1 (who the user is),
+ * L4 (no emails in the logs).
  */
 
-const BASE = 'https://algorandmcplite.goplausible.xyz';
-const REDIRECT = 'https://client.example/cb';
-const CLIENT = {
-  clientId: 'mcp-client',
-  clientName: 'Test MCP Client',
-  redirectUris: [REDIRECT],
-  tokenEndpointAuthMethod: 'none',
-};
+const provider = new OAuthProvider(providerOptions());
 
-function memoryKV() {
-  const store = new Map<string, string>();
-  return {
-    store,
-    async get(key: string, opts?: unknown) {
-      const value = store.get(key);
-      if (value === undefined) return null;
-      const json = opts === 'json' || (typeof opts === 'object' && opts !== null && (opts as { type?: string }).type === 'json');
-      return json ? JSON.parse(value) : value;
-    },
-    async put(key: string, value: string) {
-      store.set(key, value);
-    },
-    async delete(key: string) {
-      store.delete(key);
-    },
-  };
-}
+let env: any;
+let world: UpstreamWorld;
+let calls: FetchCall[];
+let clientId: string;
 
-function makeEnv() {
-  const completeAuthorization = vi.fn(async (opts: { request: { redirectUri: string; state: string } }) => ({
-    redirectTo: `${opts.request.redirectUri}?code=issued-code&state=${opts.request.state}`,
-  }));
-  const OAUTH_PROVIDER = {
-    async lookupClient(id: string) {
-      return id === CLIENT.clientId ? CLIENT : null;
-    },
-    // Plain parsing only (no redirect_uri check), to prove the handler validates on its own.
-    async parseAuthRequest(request: Request) {
-      const url = new URL(request.url);
-      return {
-        responseType: url.searchParams.get('response_type') || '',
-        clientId: url.searchParams.get('client_id') || '',
-        redirectUri: url.searchParams.get('redirect_uri') || '',
-        scope: (url.searchParams.get('scope') || '').split(' ').filter(Boolean),
-        state: url.searchParams.get('state') || '',
-        codeChallenge: url.searchParams.get('code_challenge') || undefined,
-        codeChallengeMethod: url.searchParams.get('code_challenge_method') || 'plain',
-      };
-    },
-    completeAuthorization,
-  };
-  return {
-    env: {
-      CODE_VERIFIER_KV: memoryKV(),
-      OAUTH_PROVIDER,
-      COOKIE_ENCRYPTION_KEY: 'test-cookie-key-0123456789abcdef',
-      GOOGLE_CLIENT_ID: 'google-id',
-      GOOGLE_CLIENT_SECRET: 'google-secret',
-      TWITTER_CLIENT_ID: 'x-id',
-      TWITTER_CLIENT_SECRET: 'x-secret',
-    },
-    completeAuthorization,
-  };
-}
-
-/** Minimal cookie jar: applies Set-Cookie headers from responses. */
-class Jar {
-  cookies = new Map<string, string>();
-  take(res: Response) {
-    for (const line of res.headers.getSetCookie()) {
-      const [pair, ...attrs] = line.split(';').map((s) => s.trim());
-      const eq = pair.indexOf('=');
-      const name = pair.slice(0, eq);
-      const value = pair.slice(eq + 1);
-      if (attrs.some((a) => a.toLowerCase() === 'max-age=0')) this.cookies.delete(name);
-      else this.cookies.set(name, value);
-    }
-    return res;
-  }
-  header() {
-    return [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
-  }
-}
-
-function authorizeUrl(params: Record<string, string> = {}) {
-  const qs = new URLSearchParams({
-    response_type: 'code',
-    client_id: CLIENT.clientId,
-    redirect_uri: REDIRECT,
-    state: 'client-state',
-    code_challenge: 'client-challenge',
-    code_challenge_method: 'S256',
-    ...params,
-  });
-  return `${BASE}/authorize?${qs}`;
-}
-
-async function request(env: object, url: string, init: RequestInit = {}, jar?: Jar) {
-  const headers = new Headers(init.headers);
-  if (jar?.cookies.size) headers.set('Cookie', jar.header());
-  const res = await OauthHandler.request(url, { ...init, headers }, env);
-  return jar ? jar.take(res) : res;
-}
-
-function postConsent(env: object, fields: Record<string, string>, jar?: Jar) {
-  return request(
-    env,
-    `${BASE}/authorize`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(fields).toString(),
-    },
-    jar,
-  );
-}
-
-function consentTokenFrom(html: string): string {
-  const match = html.match(/name="consent_token" value="([0-9a-f]{64})"/);
-  if (!match) throw new Error('consent_token not found in form');
-  return match[1];
-}
-
-async function openConsent(env: object, jar: Jar, params: Record<string, string> = {}) {
-  const res = await request(env, authorizeUrl(params), {}, jar);
-  return consentTokenFrom(await res.text());
-}
-
-function stubUpstream() {
-  const calls: { url: string; body: string }[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input instanceof Request ? input.url : input);
-      calls.push({ url, body: String(init?.body ?? '') });
-      if (url.startsWith('https://accounts.google.com/o/oauth2/token') || url.startsWith('https://api.x.com/2/oauth2/token')) {
-        return Response.json({ access_token: 'upstream-access-token' });
-      }
-      if (url.startsWith('https://www.googleapis.com/oauth2/v2/userinfo')) {
-        return Response.json({ id: 'google-user', name: 'Alice', email: 'alice@example.com' });
-      }
-      if (url.startsWith('https://api.x.com/2/users/me')) {
-        return Response.json({ data: { id: 'x-user', name: 'Alice', username: 'alice' } });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    }),
-  );
-  return calls;
-}
+beforeEach(async () => {
+	env = makeEnv();
+	world = defaultWorld();
+	calls = installUpstream(world);
+	clientId = await registerClient(provider, env);
+});
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 });
 
-describe('oauthFlow helpers', () => {
-  it('makes 64-hex tokens and reads cookies by exact name', () => {
-    expect(randomToken()).toMatch(/^[0-9a-f]{64}$/);
-    expect(randomToken()).not.toBe(randomToken());
-    const req = new Request(BASE, { headers: { Cookie: 'a=1; __Host-x=xyz; y__Host-x=nope' } });
-    expect(readCookie(req, '__Host-x')).toBe('xyz');
-    expect(readCookie(req, 'missing')).toBeUndefined();
-  });
+const upstreamCalls = () => calls.filter((c) => !c.url.startsWith(BASE));
 
-  it('resolves redirect URIs per RFC 6749 §3.1.2.3', () => {
-    expect(resolveRedirectUri(REDIRECT, [REDIRECT])).toBe(REDIRECT);
-    expect(resolveRedirectUri('https://attacker.example/cb', [REDIRECT])).toBeNull();
-    expect(resolveRedirectUri('', [REDIRECT])).toBe(REDIRECT);
-    expect(resolveRedirectUri('', [REDIRECT, 'https://client.example/other'])).toBeNull();
-    expect(resolveRedirectUri('', [])).toBeNull();
-  });
+describe("C1: the login state stays on the server", () => {
+	it("completes a login and returns the client's state with a code", async () => {
+		const code = await loginForCode(provider, env, clientId);
+		expect(code.split(":")).toHaveLength(3);
+	});
 
-  it('releases a consent record once, and only with its own matching cookie', async () => {
-    const kv = memoryKV() as unknown as KVNamespace;
-    const authReq = { responseType: 'code', clientId: 'c', redirectUri: REDIRECT, scope: [], state: 's' };
-    const { token, setCookie } = await createConsent(kv, authReq);
-    expect(setCookie).toContain(`${consentCookieName(token)}=${token}`);
-    expect(setCookie).toMatch(/^__Host-/);
-    expect(setCookie).toContain('HttpOnly');
-    expect(setCookie).toContain('Secure');
-    expect(setCookie).toContain('Path=/');
-    expect(setCookie).toContain('SameSite=Lax');
+	it("refuses a callback whose state has no matching cookie, without contacting the provider", async () => {
+		const { state } = await startLogin(provider, env, clientId, "google", new Map());
+		const res = await call(provider, env, `/callback?code=c&state=${state}`, {}, new Map());
+		expect(res.status).toBe(400);
+		expect(upstreamCalls()).toHaveLength(0);
+	});
 
-    const cookie = (value: string) => new Request(BASE, { headers: { Cookie: `${consentCookieName(token)}=${value}` } });
-    expect(await consumeConsent(kv, new Request(BASE), token)).toBeNull();
-    expect(await consumeConsent(kv, cookie(`${token.slice(0, 16)}${'0'.repeat(48)}`), token)).toBeNull();
-    expect(await consumeConsent(kv, cookie(token), 'not-a-token')).toBeNull();
-    expect(await consumeConsent(kv, cookie(token), token)).toEqual(authReq);
-    expect(await consumeConsent(kv, cookie(token), token)).toBeNull();
-  });
+	it("refuses the old forged state: the whole request, base64 JSON", async () => {
+		const forged = btoa(
+			JSON.stringify({
+				clientId,
+				provider: "google",
+				authReqInfo: {
+					clientId,
+					redirectUri: "https://evil.example/cb",
+					responseType: "code",
+				},
+			}),
+		);
+		const res = await call(
+			provider,
+			env,
+			`/callback?code=c&state=${encodeURIComponent(forged)}`,
+		);
+		expect(res.status).toBe(400);
+		expect(upstreamCalls()).toHaveLength(0);
+	});
 
-  it('releases an upstream state once, and only with its own matching cookie', async () => {
-    const kv = memoryKV() as unknown as KVNamespace;
-    const flow = {
-      provider: 'google' as const,
-      authReqInfo: { responseType: 'code', clientId: 'c', redirectUri: REDIRECT, scope: [], state: 's' },
-    };
-    const { state, setCookie } = await createUpstreamState(kv, flow);
-    expect(setCookie).toContain(`${stateCookieName(state)}=${state}`);
-    const rightCookie = new Request(BASE, { headers: { Cookie: `${stateCookieName(state)}=${state}` } });
-    expect(await consumeUpstreamState(kv, new Request(BASE), state)).toBeNull();
-    expect(await consumeUpstreamState(kv, rightCookie, undefined)).toBeNull();
-    expect(await consumeUpstreamState(kv, rightCookie, state)).toEqual(flow);
-    expect(await consumeUpstreamState(kv, rightCookie, state)).toBeNull();
-  });
+	it("accepts a callback once: a replay with the same state and cookie is refused", async () => {
+		const jar: Jar = new Map();
+		const { state } = await startLogin(provider, env, clientId, "google", jar);
+		const cookie = jar.get(LOGIN_COOKIE);
+		const first = await call(provider, env, `/callback?code=c&state=${state}`, {}, jar);
+		expect(first.status).toBe(302);
+
+		const replayJar: Jar = new Map([[LOGIN_COOKIE, cookie ?? ""]]);
+		const replay = await call(provider, env, `/callback?code=c&state=${state}`, {}, replayJar);
+		expect(replay.status).toBe(400);
+	});
+
+	it("clears the login cookie once the callback is used", async () => {
+		const jar: Jar = new Map();
+		const { state } = await startLogin(provider, env, clientId, "google", jar);
+		expect(jar.has(LOGIN_COOKIE)).toBe(true);
+		await call(provider, env, `/callback?code=c&state=${state}`, {}, jar);
+		expect(jar.has(LOGIN_COOKIE)).toBe(false);
+	});
+
+	it("refuses a provider choice posted without the dialog's cookie (another site's form)", async () => {
+		const page = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId)}`,
+			{},
+			new Map(),
+		);
+		const state = dialogState(await page.text());
+		const res = await call(provider, env, "/authorize", {
+			method: "POST",
+			body: new URLSearchParams({ provider: "google", state }),
+		});
+		expect(res.status).toBe(400);
+		expect(res.headers.get("location")).toBeNull();
+	});
+
+	it("accepts a provider choice once", async () => {
+		const jar: Jar = new Map();
+		const page = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId)}`,
+			{},
+			jar,
+		);
+		const state = dialogState(await page.text());
+		const cookie = jar.get(AUTHORIZE_COOKIE) ?? "";
+		const post = (j: Jar) =>
+			call(
+				provider,
+				env,
+				"/authorize",
+				{ method: "POST", body: new URLSearchParams({ provider: "google", state }) },
+				j,
+			);
+		expect((await post(jar)).status).toBe(302);
+		expect((await post(new Map([[AUTHORIZE_COOKIE, cookie]]))).status).toBe(400);
+	});
+
+	it("refuses an unknown provider", async () => {
+		const jar: Jar = new Map();
+		const page = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId)}`,
+			{},
+			jar,
+		);
+		const res = await call(
+			provider,
+			env,
+			"/authorize",
+			{
+				method: "POST",
+				body: new URLSearchParams({
+					provider: "evil",
+					state: dialogState(await page.text()),
+				}),
+			},
+			jar,
+		);
+		expect(res.status).toBe(400);
+	});
+
+	it("sends only a random value to the provider as state", async () => {
+		const { location, state } = await startLogin(provider, env, clientId, "google", new Map());
+		expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+		expect(location.href).not.toContain(encodeURIComponent(REDIRECT));
+		expect(location.href).not.toContain(clientId);
+	});
 });
 
-describe('GET /authorize', () => {
-  it('renders consent with a consent token bound to a cookie, safe headers and a submit guard', async () => {
-    const { env } = makeEnv();
-    const jar = new Jar();
-    const res = await request(env, authorizeUrl(), {}, jar);
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    const token = consentTokenFrom(html);
-    expect(jar.cookies.get(consentCookieName(token))).toBe(token);
-    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
-    expect(res.headers.get('x-frame-options')).toBe('DENY');
-    expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
-    expect(html).toContain('this.dataset.sent');
-    expect(html).not.toContain('Website:');
-  });
+describe("L1: the X PKCE verifier belongs to its own login", () => {
+	it("lets two concurrent X logins through one client finish, each with its own verifier", async () => {
+		const a: Jar = new Map();
+		const b: Jar = new Map();
+		const loginA = await startLogin(provider, env, clientId, "twitter", a);
+		const loginB = await startLogin(provider, env, clientId, "twitter", b);
+		const challengeA = loginA.location.searchParams.get("code_challenge") ?? "";
+		const challengeB = loginB.location.searchParams.get("code_challenge") ?? "";
+		expect(challengeA).not.toBe(challengeB);
+		world.xChallenges.set("x-code-a", challengeA);
+		world.xChallenges.set("x-code-b", challengeB);
 
-  it('rejects unregistered redirect URIs, unknown clients and non-code response types', async () => {
-    const { env } = makeEnv();
-    expect((await request(env, authorizeUrl({ redirect_uri: 'https://attacker.example/cb' }))).status).toBe(400);
-    expect((await request(env, authorizeUrl({ client_id: 'unknown' }))).status).toBe(400);
-    expect((await request(env, authorizeUrl({ client_id: '' }))).status).toBe(400);
-    expect((await request(env, authorizeUrl({ response_type: 'token' }))).status).toBe(400);
-    expect(env.CODE_VERIFIER_KV.store.size).toBe(0);
-  });
+		const resA = await call(
+			provider,
+			env,
+			`/callback?code=x-code-a&state=${loginA.state}`,
+			{},
+			a,
+		);
+		const resB = await call(
+			provider,
+			env,
+			`/callback?code=x-code-b&state=${loginB.state}`,
+			{},
+			b,
+		);
+		expect(resA.status).toBe(302);
+		expect(resB.status).toBe(302);
+	});
 
-  it('requires PKCE with S256 only', async () => {
-    const { env } = makeEnv();
-    const noChallenge = new URL(authorizeUrl());
-    noChallenge.searchParams.delete('code_challenge');
-    expect((await request(env, noChallenge.toString())).status).toBe(400);
-    expect((await request(env, authorizeUrl({ code_challenge_method: 'S512' }))).status).toBe(400);
-    expect((await request(env, authorizeUrl({ code_challenge_method: 'plain' }))).status).toBe(400);
-    // A missing method means "plain" (RFC 7636 §4.3), so it is refused as well
-    const noMethod = new URL(authorizeUrl());
-    noMethod.searchParams.delete('code_challenge_method');
-    expect((await request(env, noMethod.toString())).status).toBe(400);
-    expect(env.CODE_VERIFIER_KV.store.size).toBe(0);
-
-    expect((await request(env, authorizeUrl({ code_challenge_method: 'S256' }))).status).toBe(200);
-  });
-
-  it('uses the single registered redirect_uri when the request omits it', async () => {
-    const { env } = makeEnv();
-    await request(env, authorizeUrl());
-    const url = new URL(authorizeUrl());
-    url.searchParams.delete('redirect_uri');
-    const res = await request(env, url.toString());
-    expect(res.status).toBe(200);
-    const stored = [...env.CODE_VERIFIER_KV.store.values()].map((v) => JSON.parse(v));
-    expect(stored.map((s) => s.redirectUri)).toEqual([REDIRECT, REDIRECT]);
-  });
-
-  it('shows the requested scopes, the redirect target and what each provider shares', async () => {
-    const { env } = makeEnv();
-    const html = await (await request(env, authorizeUrl({ scope: 'wallet:read <b>x</b>' }))).text();
-    expect(html).toContain('Sends you back to:');
-    expect(html).toContain(REDIRECT);
-    expect(html).toContain('Requested scopes:');
-    expect(html).toContain('Your sign-in provider shares:');
-    expect(html).toContain('<div>wallet:read</div>');
-    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
-    expect(html).not.toContain('<b>x</b>');
-    expect(html).toContain('Google: email profile');
-    expect(html).toContain('GitHub: read:user user:email');
-    expect(html).toContain('LinkedIn: openid profile email');
-    expect(html).toContain('X: tweet.read users.read');
-    expect(html).toContain('including signing Algorand transactions with your wallet');
-
-    const none = await (await request(env, authorizeUrl())).text();
-    expect(none).toContain('None specified');
-  });
-
-  it('asks for consent again even after an earlier approval in the same browser', async () => {
-    const { env } = makeEnv();
-    const browser = new Jar();
-    const token = await openConsent(env, browser);
-    await postConsent(env, { consent_token: token, provider: 'google' }, browser);
-    const again = await request(env, authorizeUrl(), {}, browser);
-    expect(again.status).toBe(200);
-    expect(again.headers.get('location')).toBeNull();
-  });
+	it("no longer uses CODE_VERIFIER_KV", async () => {
+		env.CODE_VERIFIER_KV = {
+			get: vi.fn(),
+			put: vi.fn(),
+			delete: vi.fn(),
+		};
+		const jar: Jar = new Map();
+		const login = await startLogin(provider, env, clientId, "twitter", jar);
+		world.xChallenges.set("x-code", login.location.searchParams.get("code_challenge") ?? "");
+		await call(provider, env, `/callback?code=x-code&state=${login.state}`, {}, jar);
+		expect(env.CODE_VERIFIER_KV.put).not.toHaveBeenCalled();
+		expect(env.CODE_VERIFIER_KV.get).not.toHaveBeenCalled();
+	});
 });
 
-describe('POST /authorize', () => {
-  it('refuses a submission without the consent cookie (cross-site POST)', async () => {
-    const { env } = makeEnv();
-    const token = await openConsent(env, new Jar());
-    // Attacker page auto-submits the form: the SameSite=Lax cookie is not sent
-    const res = await postConsent(env, { consent_token: token, provider: 'google' });
-    expect(res.status).toBe(403);
-    expect(res.headers.get('location')).toBeNull();
-  });
-
-  it('refuses a token from another browser and an unknown provider', async () => {
-    const { env } = makeEnv();
-    const attackerToken = await openConsent(env, new Jar());
-    const victim = new Jar();
-    await openConsent(env, victim);
-    expect((await postConsent(env, { consent_token: attackerToken, provider: 'google' }, victim)).status).toBe(403);
-
-    const browser = new Jar();
-    const token = await openConsent(env, browser);
-    expect((await postConsent(env, { consent_token: token, provider: 'evil' }, browser)).status).toBe(403);
-  });
-
-  it('accepts the form from the browser that saw it, once, and starts the upstream flow', async () => {
-    const { env } = makeEnv();
-    const browser = new Jar();
-    const token = await openConsent(env, browser);
-    const consentCookie = browser.cookies.get(consentCookieName(token)) as string;
-
-    const res = await postConsent(env, { consent_token: token, provider: 'google' }, browser);
-    expect(res.status).toBe(302);
-    const location = new URL(res.headers.get('location') as string);
-    expect(location.origin).toBe('https://accounts.google.com');
-    const state = location.searchParams.get('state') as string;
-    expect(state).toMatch(/^[0-9a-f]{64}$/);
-    expect(browser.cookies.get(stateCookieName(state))).toBe(state);
-    expect(browser.cookies.has(consentCookieName(token))).toBe(false);
-    expect(res.headers.getSetCookie().length).toBe(2);
-    expect(res.headers.getSetCookie().some((c) => c.startsWith('mcp-'))).toBe(false);
-
-    // Replaying the same form submission fails
-    const replay = new Jar();
-    replay.cookies.set(consentCookieName(token), consentCookie);
-    expect((await postConsent(env, { consent_token: token, provider: 'google' }, replay)).status).toBe(403);
-  });
-
-  it('lets two sign-ins run in the same browser without breaking each other', async () => {
-    const { env } = makeEnv();
-    const browser = new Jar();
-    const first = await openConsent(env, browser);
-    const second = await openConsent(env, browser);
-    expect((await postConsent(env, { consent_token: first, provider: 'google' }, browser)).status).toBe(302);
-    expect((await postConsent(env, { consent_token: second, provider: 'google' }, browser)).status).toBe(302);
-  });
+describe("L2: one Set-Cookie header per cookie", () => {
+	it("sends the cleared dialog cookie and the login cookie as separate headers", async () => {
+		const { res } = await startLogin(provider, env, clientId, "google", new Map());
+		const cookies = res.headers.getSetCookie();
+		expect(cookies).toHaveLength(2);
+		expect(cookies.some((c) => c.startsWith(`${AUTHORIZE_COOKIE}=;`))).toBe(true);
+		expect(
+			cookies.some((c) => c.startsWith(`${LOGIN_COOKIE}=`) && c.includes("Max-Age=600")),
+		).toBe(true);
+	});
 });
 
-describe('GET /callback', () => {
-  async function startGoogleFlow(env: object, browser = new Jar()) {
-    const token = await openConsent(env, browser);
-    const res = await postConsent(env, { consent_token: token, provider: 'google' }, browser);
-    const state = new URL(res.headers.get('location') as string).searchParams.get('state') as string;
-    return { browser, state };
-  }
+describe("C2: GET /authorize validates the request and never redirects an error", () => {
+	async function authorize(params: Record<string, string>, drop: string[] = []) {
+		const query = new URLSearchParams(await authorizeQuery(clientId, params));
+		for (const name of drop) query.delete(name);
+		return call(provider, env, `/authorize?${query}`);
+	}
 
-  it("refuses a state without its cookie, or with a forged cookie value", async () => {
-    const { env, completeAuthorization } = makeEnv();
-    const calls = stubUpstream();
-    const { state } = await startGoogleFlow(env);
-    const forged = new Jar();
-    forged.cookies.set(stateCookieName(state), `${state.slice(0, 16)}${'0'.repeat(48)}`);
-    expect((await request(env, `${BASE}/callback?code=c&state=${state}`)).status).toBe(400);
-    expect((await request(env, `${BASE}/callback?code=c&state=${state}`, {}, forged)).status).toBe(400);
-    expect(calls.length).toBe(0);
-    expect(completeAuthorization).not.toHaveBeenCalled();
-  });
+	const refused = async (res: Response, text: RegExp) => {
+		expect(res.status).toBe(400);
+		expect(res.headers.get("location")).toBeNull();
+		expect(await res.text()).toMatch(text);
+	};
 
-  it('completes the flow for the right browser to the registered redirect URI, once', async () => {
-    const { env, completeAuthorization } = makeEnv();
-    stubUpstream();
-    const { browser, state } = await startGoogleFlow(env);
+	it("refuses a missing or unknown client", async () => {
+		await refused(await authorize({}, ["client_id"]), /Missing client_id/);
+		await refused(await authorize({ client_id: "nope" }), /Unknown client/);
+	});
 
-    const res = await request(env, `${BASE}/callback?code=upstream-code&state=${state}`, {}, browser);
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe(`${REDIRECT}?code=issued-code&state=client-state`);
-    expect(browser.cookies.has(stateCookieName(state))).toBe(false);
-    expect(completeAuthorization).toHaveBeenCalledOnce();
-    const opts = completeAuthorization.mock.calls[0][0] as { request: { redirectUri: string; clientId: string } };
-    expect(opts.request.redirectUri).toBe(REDIRECT);
-    expect(opts.request.clientId).toBe(CLIENT.clientId);
+	it("refuses a redirect URI the client did not register (exact match)", async () => {
+		await refused(
+			await authorize({ redirect_uri: "https://evil.example/cb" }),
+			/not registered/,
+		);
+		await refused(await authorize({ redirect_uri: `${REDIRECT}/` }), /not registered/);
+		await refused(await authorize({ redirect_uri: `${REDIRECT}?x=1` }), /not registered/);
+	});
 
-    // Replay with the same state and cookie fails
-    browser.cookies.set(stateCookieName(state), state);
-    expect((await request(env, `${BASE}/callback?code=upstream-code&state=${state}`, {}, browser)).status).toBe(400);
-  });
+	it("uses the only registered redirect URI when none is sent, and refuses that with two", async () => {
+		const ok = await authorize({}, ["redirect_uri"]);
+		expect(ok.status).toBe(200);
 
-  it('completes two concurrent flows in the same browser', async () => {
-    const { env } = makeEnv();
-    stubUpstream();
-    const browser = new Jar();
-    const a = await startGoogleFlow(env, browser);
-    const b = await startGoogleFlow(env, browser);
-    expect((await request(env, `${BASE}/callback?code=x&state=${a.state}`, {}, browser)).status).toBe(302);
-    expect((await request(env, `${BASE}/callback?code=y&state=${b.state}`, {}, browser)).status).toBe(302);
-  });
+		const two = (await (
+			await call(provider, env, "/register", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					redirect_uris: [REDIRECT, "https://client.example/other"],
+					token_endpoint_auth_method: "none",
+				}),
+			})
+		).json()) as { client_id: string };
+		await refused(
+			await authorize({ client_id: two.client_id }, ["redirect_uri"]),
+			/Missing redirect_uri/,
+		);
+	});
 
-  it('keeps the X PKCE verifier per flow and sends it with the token request', async () => {
-    const { env } = makeEnv();
-    const calls = stubUpstream();
-    const browser = new Jar();
-    const token = await openConsent(env, browser);
-    const res = await postConsent(env, { consent_token: token, provider: 'twitter' }, browser);
-    const location = new URL(res.headers.get('location') as string);
-    const challenge = location.searchParams.get('code_challenge') as string;
-    const state = location.searchParams.get('state') as string;
+	it("refuses a missing or unsupported response type, the implicit flow included", async () => {
+		await refused(await authorize({}, ["response_type"]), /Missing response_type/);
+		await refused(await authorize({ response_type: "token" }), /authorization code flow/);
+		await refused(await authorize({ response_type: "id_token" }), /authorization code flow/);
+	});
 
-    const done = await request(env, `${BASE}/callback?code=x-code&state=${state}`, {}, browser);
-    expect(done.status).toBe(302);
-    const tokenCall = calls.find((c) => c.url.startsWith('https://api.x.com/2/oauth2/token'));
-    const verifier = new URLSearchParams(tokenCall?.body).get('code_verifier') as string;
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-    const expected = btoa(String.fromCharCode(...digest)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    expect(challenge).toBe(expected);
-  });
+	it("D1: requires PKCE with S256 (a missing method means plain, RFC 7636 §4.3)", async () => {
+		await refused(await authorize({}, ["code_challenge"]), /PKCE is required/);
+		await refused(await authorize({ code_challenge_method: "plain" }), /only S256/);
+		await refused(await authorize({}, ["code_challenge_method"]), /only S256/);
+	});
+
+	it("shows the dialog for a valid request, with a dialog cookie", async () => {
+		const jar: Jar = new Map();
+		const res = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId)}`,
+			{},
+			jar,
+		);
+		expect(res.status).toBe(200);
+		expect(jar.get(AUTHORIZE_COOKIE)).toBe(dialogState(await res.text()));
+	});
 });
 
-describe('who the user is (/callback)', () => {
-  function stubGoogleUser(user: Record<string, unknown>) {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input instanceof Request ? input.url : input);
-        if (url.startsWith('https://accounts.google.com/o/oauth2/token')) {
-          return Response.json({ access_token: 'upstream-access-token' });
-        }
-        if (url.startsWith('https://www.googleapis.com/oauth2/v2/userinfo')) return Response.json(user);
-        throw new Error(`unexpected fetch ${url}`);
-      }),
-    );
-  }
+describe("H2: the provider picker", () => {
+	it("always shows, even with the old remembered-approval cookies, and clears them", async () => {
+		const jar: Jar = new Map([
+			["mcp-approved-clients", "sig.payload"],
+			["mcp-provider-preference", "google"],
+		]);
+		const res = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId)}`,
+			{},
+			jar,
+		);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("location")).toBeNull();
+		expect(jar.has("mcp-approved-clients")).toBe(false);
+		expect(jar.has("mcp-provider-preference")).toBe(false);
+	});
 
-  async function googleCallback(user: Record<string, unknown>) {
-    const { env, completeAuthorization } = makeEnv();
-    stubGoogleUser(user);
-    const browser = new Jar();
-    const token = await openConsent(env, browser);
-    const res = await postConsent(env, { consent_token: token, provider: 'google' }, browser);
-    const state = new URL(res.headers.get('location') as string).searchParams.get('state') as string;
-    const done = await request(env, `${BASE}/callback?code=c&state=${state}`, {}, browser);
-    return { done, completeAuthorization, browser, state };
-  }
+	it("is not cacheable and cannot be framed", async () => {
+		const res = await call(provider, env, `/authorize?${await authorizeQuery(clientId)}`);
+		expect(res.headers.get("Cache-Control")).toBe("no-store");
+		expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+		expect(res.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
+	});
 
-  it('refuses a Google account whose email Google has not verified', async () => {
-    const { done, completeAuthorization, browser, state } = await googleCallback({
-      id: 'g1', name: 'Mallory', email: 'victim@example.com', verified_email: false,
-    });
-    expect(done.status).toBe(400);
-    expect(completeAuthorization).not.toHaveBeenCalled();
-    expect(browser.cookies.has(stateCookieName(state))).toBe(false);
-  });
+	it("links only http(s) client pages: a stored javascript: URL is not rendered", async () => {
+		// A client stored before registration checked its URLs
+		await env.OAUTH_KV.put(
+			"client:old-client",
+			JSON.stringify({
+				clientId: "old-client",
+				redirectUris: [REDIRECT],
+				clientName: "Old <b>Client</b>",
+				tosUri: "javascript:alert(document.cookie)",
+				clientUri: "data:text/html,<script>alert(1)</script>",
+				policyUri: "https://client.example/privacy",
+				tokenEndpointAuthMethod: "none",
+			}),
+		);
+		const res = await call(provider, env, `/authorize?${await authorizeQuery("old-client")}`);
+		const html = await res.text();
+		expect(html).not.toContain("javascript:");
+		expect(html).not.toContain("data:text/html");
+		expect(html).toContain('href="https://client.example/privacy"');
+		expect(html).toContain("Old &lt;b&gt;Client&lt;/b&gt;");
+	});
 
-  it('refuses a login without an email or without the provider user ID', async () => {
-    for (const user of [{ id: 'g1', name: 'NoMail' }, { name: 'NoId', email: 'a@example.com', verified_email: true }]) {
-      const { done, completeAuthorization } = await googleCallback(user);
-      expect(done.status).toBe(400);
-      expect(completeAuthorization).not.toHaveBeenCalled();
-    }
-  });
+	it("shows the client's own links only, where the user will be sent, and that the name is unverified", async () => {
+		const res = await call(provider, env, `/authorize?${await authorizeQuery(clientId)}`);
+		const html = await res.text();
+		expect(html).not.toContain("http://goplausible.com/policy");
+		expect(html).not.toContain('href="https://algorandmcp.goplausible.xyz"');
+		expect(html).toContain("you will be sent to <strong>https://client.example</strong>");
+		expect(html).toContain("has not verified it");
+		expect(html).not.toContain("provider_preference");
+	});
 
-  it('passes a verified Google account through, with its ID', async () => {
-    const { done, completeAuthorization } = await googleCallback({
-      id: 'g1', name: 'Alice', email: 'alice@example.com', verified_email: true,
-    });
-    expect(done.status).toBe(302);
-    const opts = completeAuthorization.mock.calls[0][0] as unknown as { props: { email: string; id: string } };
-    expect(opts.props).toMatchObject({ email: 'alice@example.com', id: 'g1' });
-  });
+	it("shows the requested scopes, that the client can sign with the wallet, and what each provider shares", async () => {
+		const res = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery(clientId, { scope: "wallet:read <b>x</b>" })}`,
+		);
+		const html = await res.text();
+		expect(html).toContain("Requested scopes:");
+		expect(html).toContain("<div>wallet:read</div>");
+		expect(html).toContain("&lt;b&gt;x&lt;/b&gt;");
+		expect(html).not.toContain("<b>x</b>");
+		expect(html).toContain("including signing Algorand transactions with your wallet");
+		expect(html).toContain("Google: email profile");
+		expect(html).toContain("GitHub: read:user user:email");
+		expect(html).toContain("LinkedIn: openid profile email");
+	});
 
-  it('names a GitHub account only by an address GitHub marks verified', () => {
-    const emails = [
-      { email: 'unverified-primary@example.com', primary: true, verified: false },
-      { email: 'public@example.com', primary: false, verified: true },
-      { email: 'other@example.com', primary: false, verified: true },
-    ];
-    expect(pickVerifiedGitHubEmail(emails, 'public@example.com')).toBe('public@example.com');
-    expect(pickVerifiedGitHubEmail(emails, 'unverified-primary@example.com')).toBe('public@example.com');
-    expect(pickVerifiedGitHubEmail(emails, null)).toBe('public@example.com');
-    expect(pickVerifiedGitHubEmail([{ email: 'p@example.com', primary: true, verified: true }, ...emails], null)).toBe('p@example.com');
-    expect(pickVerifiedGitHubEmail([{ email: 'x@example.com', primary: true, verified: false }], 'x@example.com')).toBe('');
-    expect(pickVerifiedGitHubEmail({ message: 'Bad credentials' }, 'x@example.com')).toBe('');
-  });
+	it("refuses a client registered before the protocol's redirect URI rule, with a 400 page", async () => {
+		for (const [id, uri] of [
+			["old-http", "http://client.example/cb"],
+			["old-app", "exp://192.168.1.20:8081/--/oauth"],
+		]) {
+			env.OAUTH_KV.m.set(
+				`client:${id}`,
+				JSON.stringify({
+					clientId: id,
+					redirectUris: [uri],
+					tokenEndpointAuthMethod: "none",
+				}),
+			);
+			const res = await call(
+				provider,
+				env,
+				`/authorize?${await authorizeQuery(id, { redirect_uri: uri })}`,
+			);
+			expect(res.status, uri).toBe(400);
+			expect(res.headers.get("location"), uri).toBeNull();
+			expect(await res.text(), uri).toContain("no longer accepted");
+		}
+	});
+
+	it("lets a native app use any port on its registered loopback redirect", async () => {
+		env.OAUTH_KV.m.set(
+			"client:native",
+			JSON.stringify({
+				clientId: "native",
+				redirectUris: ["http://127.0.0.1/callback"],
+				tokenEndpointAuthMethod: "none",
+			}),
+		);
+		const ok = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery("native", { redirect_uri: "http://127.0.0.1:53682/callback" })}`,
+		);
+		expect(ok.status).toBe(200);
+		const otherPath = await call(
+			provider,
+			env,
+			`/authorize?${await authorizeQuery("native", { redirect_uri: "http://127.0.0.1:53682/other" })}`,
+		);
+		expect(otherPath.status).toBe(400);
+	});
 });
 
-describe('the consent page shows only the client\'s own http(s) pages', () => {
-  it('drops javascript: links, shows no GoPlausible page as the client\'s, and says the name is unverified', async () => {
-    const { env } = makeEnv();
-    const client = {
-      ...CLIENT,
-      clientUri: 'https://client.example/',
-      policyUri: 'javascript:alert(1)',
-      tosUri: 'javascript:alert(2)',
-    };
-    (env.OAUTH_PROVIDER as { lookupClient: unknown }).lookupClient = async (id: string) => (id === CLIENT.clientId ? client : null);
-    const html = await (await request(env, authorizeUrl(), {}, new Jar())).text();
-    expect(html).not.toContain('javascript:');
-    expect(html).not.toContain('goplausible.com/policy');
-    expect(html).toContain('href="https://client.example/"');
-    expect(html).toContain('has not verified it');
-  });
+describe("M1: who the user is", () => {
+	async function finish(upstream: string, code = "upstream-code") {
+		const jar: Jar = new Map();
+		const login = await startLogin(provider, env, clientId, upstream, jar);
+		if (upstream === "twitter") {
+			world.xChallenges.set(code, login.location.searchParams.get("code_challenge") ?? "");
+		}
+		return call(provider, env, `/callback?code=${code}&state=${login.state}`, {}, jar);
+	}
+
+	it("GitHub: refuses an account whose only addresses are unverified, even a public primary one", async () => {
+		world.github.user.email = "public@example.com";
+		world.github.emails = [
+			{ email: "public@example.com", primary: true, verified: false },
+			{ email: "other@example.com", primary: false, verified: false },
+		];
+		expect((await finish("github")).status).toBe(400);
+	});
+
+	it("GitHub: names the account by a verified address", async () => {
+		world.github.emails = [
+			{ email: "unverified@example.com", primary: true, verified: false },
+			{ email: "verified@example.com", primary: false, verified: true },
+		];
+		expect((await finish("github")).status).toBe(302);
+	});
+
+	it("GitHub: picks the verified public address, else the verified primary, else any verified one", () => {
+		const emails = [
+			{ email: "a@example.com", primary: false, verified: true },
+			{ email: "p@example.com", primary: true, verified: true },
+			{ email: "pub@example.com", primary: false, verified: true },
+			{ email: "u@example.com", primary: false, verified: false },
+		];
+		expect(pickVerifiedGitHubEmail(emails, "pub@example.com")).toBe("pub@example.com");
+		expect(pickVerifiedGitHubEmail(emails, "u@example.com")).toBe("p@example.com");
+		expect(pickVerifiedGitHubEmail(emails.slice(0, 1), null)).toBe("a@example.com");
+		expect(pickVerifiedGitHubEmail([emails[3]], "u@example.com")).toBe("");
+		expect(pickVerifiedGitHubEmail({ message: "Bad credentials" }, null)).toBe("");
+	});
+
+	it("Google: refuses verified_email: false", async () => {
+		world.google.verified_email = false;
+		expect((await finish("google")).status).toBe(400);
+	});
+
+	it("LinkedIn: refuses a missing email and email_verified: false", async () => {
+		world.linkedin.email = undefined;
+		expect((await finish("linkedin")).status).toBe(400);
+		world.linkedin.email = "lin@example.com";
+		world.linkedin.email_verified = false;
+		expect((await finish("linkedin")).status).toBe(400);
+		world.linkedin.email_verified = true;
+		expect((await finish("linkedin")).status).toBe(302);
+	});
+
+	it("refuses a login without the provider's user ID", async () => {
+		world.google.id = undefined;
+		expect((await finish("google")).status).toBe(400);
+		world.x.data.id = undefined;
+		expect((await finish("twitter", "x-no-id")).status).toBe(400);
+	});
+
+	it("X: names the account by the username", async () => {
+		expect((await finish("twitter", "x-ok")).status).toBe(302);
+	});
+});
+
+describe("L4: no emails in the logs", () => {
+	it("logs no address during a login", async () => {
+		const lines: string[] = [];
+		for (const level of ["log", "info", "warn", "error"] as const) {
+			vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+				lines.push(
+					args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "),
+				);
+			});
+		}
+		await loginForCode(provider, env, clientId);
+		expect(lines.length).toBeGreaterThan(0);
+		expect(lines.join("\n")).not.toContain("alice@example.com");
+	});
+});
+
+it("computes S256 as RFC 7636 Appendix B does", async () => {
+	expect(await s256("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+		"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+	);
 });

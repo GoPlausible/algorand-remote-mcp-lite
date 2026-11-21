@@ -1,31 +1,33 @@
-import { Hono } from "hono";
-import { getLogo } from "./logoUrl.js";
-import type { AuthRequest, OAuthHelpers } from "./oauth-provider";
+// Shared login layer of the dOAuth MCP servers: algorand-remote-mcp is the master, and doauth's
+// scripts/sync-oauth-provider.mjs copies this file unchanged into algorand-remote-mcp-lite. Keep it
+// free of anything specific to one server; per-server values live in oauth-server-info.ts.
+import { type Context, Hono } from "hono";
+import { type AuthRequest, AuthRequestError, type OAuthHelpers } from "./oauth-provider";
+import { oauthServerInfo } from "./oauth-server-info";
 
 import type { Env, Props } from "./types";
-import { handleImageProxyRequest, IMAGE_PROXY_PATH } from "./utils/imageProxy";
 import {
-	clearFlowCookie,
-	consumeUpstreamState,
-	createConsent,
-	isOAuthProvider,
-	redirectUriProblem,
-	resolveRedirectUri,
-	stateCookieName,
-} from "./utils/oauthFlow";
-import {
+	AUTHORIZE_COOKIE,
+	AUTHORIZE_KEY_PREFIX,
+	LEGACY_COOKIES,
+	LOGIN_COOKIE,
+	LOGIN_KEY_PREFIX,
+	type PendingLogin,
+	clearPendingCookie,
 	fetchUpstreamAuthToken,
-	parseRedirectApproval,
+	generatePendingValue,
+	isProvider,
+	pendingCookie,
 	redirectToProvider,
 	renderApprovalDialog,
-	revokeUpstreamToken,
+	revokeOwnSession,
+	storePendingRecord,
+	takePendingRecord,
 } from "./workers-oauth-utils";
-// import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 
 // Extend the Env type to include our OAuth configuration
 interface OAuthEnv {
 	OAUTH_PROVIDER: OAuthHelpers;
-	CODE_VERIFIER_KV: KVNamespace; // KV namespace for PKCE code verifiers
 	OAUTH_KV: KVNamespace; // KV namespace for OAuth client data
 	COOKIE_ENCRYPTION_KEY: string;
 	GOOGLE_CLIENT_ID: string;
@@ -40,127 +42,200 @@ interface OAuthEnv {
 }
 
 const app = new Hono<{ Bindings: Env & OAuthEnv }>();
+type HandlerContext = Context<{ Bindings: Env & OAuthEnv }>;
+
+const EXPIRED_LOGIN =
+	"This login is invalid or has expired. Please start again from the application.";
+
+/** Clears the cookies of the removed remembered-approval shortcut, if the browser still sends them */
+function clearLegacyCookies(request: Request, headers: Headers): void {
+	const cookieHeader = request.headers.get("Cookie") || "";
+	for (const name of LEGACY_COOKIES) {
+		if (cookieHeader.includes(`${name}=`)) {
+			headers.append("Set-Cookie", `${name}=; Secure; Path=/; SameSite=Lax; Max-Age=0`);
+		}
+	}
+}
 
 /**
- * OAuth authorization request from an MCP client.
- * Validates the client, its redirect URI (RFC 6749 §3.1.2) and PKCE, then renders the consent
- * form. Errors are shown as a 400 page and never redirected back to the client
- * (RFC 9700 §4.11.2, MCP "Open Redirection"; decision 2026-11-09).
+ * OAuth Authorization Endpoint (GET)
+ *
+ * Validates the request against the client's registration, keeps it on the server under a random
+ * value, and renders the provider picker. The form carries only that value; a matching cookie
+ * ties it to this browser.
  */
 app.get("/authorize", async (c) => {
 	console.log("[OAUTH_HANDLER] Received OAuth authorization request");
+
 	let authReqInfo: AuthRequest;
 	try {
-		// Validates client_id and redirect_uri, and rejects response_type=token (implicit flow is off)
 		authReqInfo = await c.env.OAUTH_PROVIDER.parseAuthRequest(c.req.raw);
-	} catch (e) {
-		console.warn("[OAUTH_HANDLER] Rejected authorization request:", e instanceof Error ? e.message : e);
-		return c.text("Invalid authorization request", 400);
+	} catch (error) {
+		if (!(error instanceof AuthRequestError)) throw error;
+		console.warn("[OAUTH_HANDLER] Rejected authorization request:", { error: error.error });
+		// Shown here and never redirected: before login, a redirect would make this an open redirector
+		return c.text(
+			`Invalid authorization request: ${error.message} Please return to the application and try again.`,
+			400,
+		);
 	}
-	const client = authReqInfo.clientId
-		? await c.env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId)
-		: null;
-	if (!client) {
-		console.error("[OAUTH_HANDLER] Invalid OAuth request: unknown or missing client_id");
-		return c.text("Invalid request", 400);
-	}
-	if (authReqInfo.responseType !== "code") {
-		return c.text("Unsupported response_type", 400);
-	}
-	const redirectUri = resolveRedirectUri(authReqInfo.redirectUri, client.redirectUris);
-	// Also holds clients registered under older rules to the current redirect URI rules
-	if (!redirectUri || redirectUriProblem(redirectUri)) {
-		return c.text("Invalid redirect_uri", 400);
-	}
-	// PKCE is required for every client (OAuth 2.1 §4.1.2.1: public clients always; other clients
-	// unless code injection is mitigated another way, which this server has no other means for).
-	// Only S256 is accepted (decision 2026-11-10): RFC 7636 §4.2 makes it the mandatory method,
-	// RFC 9700 §2.1.1 calls it the only one that does not expose the verifier, and RFC 7636
-	// §4.4.1 allows refusing others. A missing method means "plain" (§4.3), so it is refused too.
-	if (!authReqInfo.codeChallenge) {
-		return c.text("Invalid request: code_challenge is required (PKCE)", 400);
-	}
-	if (authReqInfo.codeChallengeMethod !== "S256") {
-		return c.text("Invalid request: code_challenge_method must be S256", 400);
-	}
-	// The provider stores this redirect URI in the grant; a redirect_uri sent to /token must equal it
-	authReqInfo = { ...authReqInfo, redirectUri };
 	const clientId = authReqInfo.clientId;
 	console.log("[OAUTH_HANDLER] Validated OAuth request for Client ID:", clientId);
 
-	// Remembered approvals are parked (see parseRedirectApproval in workers-oauth-utils.ts):
-	// consent is asked on every authorization.
-	// const { approved, provider } = await clientIdAlreadyApproved(c.req.raw, clientId, c.env.COOKIE_ENCRYPTION_KEY || "");
-	// if (approved && isOAuthProvider(provider)) {
-	// 	return redirectToProvider(c, provider, authReqInfo);
-	// }
-	console.log(`[OAUTH_HANDLER] Rendering approval dialog for Client ID ${clientId}`);
+	// Always show the provider picker: it is the only client-specific consent step. There is no
+	// "remembered consent" shortcut; users always choose their provider (decision of 2026-11-07).
+	const client = await c.env.OAUTH_PROVIDER.lookupClient(clientId);
 
-	const consent = await createConsent(c.env.CODE_VERIFIER_KV, authReqInfo);
-	return renderApprovalDialog(c.req.raw, {
+	const requestId = generatePendingValue();
+	await storePendingRecord(c.env.PENDING_LOGINS, AUTHORIZE_KEY_PREFIX, requestId, authReqInfo);
+
+	const response = renderApprovalDialog(c.req.raw, {
 		client,
-		server: {
-			description:
-				"Algorand MCP Remote Server Authentication using OAuth 2 protocol. Supports Google, GitHub, Twitter, and LinkedIn.",
-			name: "Algorand Remote MCP OAuth",
-			// Using the GoPlausible logo as a base64 data URL
-			//    `base64 -i src/assets/goPlausible-logo-type-h.png | pbcopy` (on macOS)
-			//    `base64 -w 0 src/assets/goPlausible-logo-type-h.png | xclip -selection clipboard` (on Linux)
-			logo: getLogo(),
-		},
-
-		consentToken: consent.token,
-		setCookie: consent.setCookie,
-		authReqInfo,
+		redirectUri: authReqInfo.redirectUri,
+		scope: authReqInfo.scope,
+		server: oauthServerInfo(),
+		state: requestId,
 	});
+	response.headers.append("Set-Cookie", pendingCookie(AUTHORIZE_COOKIE, requestId));
+	clearLegacyCookies(c.req.raw, response.headers);
+	return response;
 });
 
 /**
- * Consent form submission.
- * Accepted only from the browser that was shown the form (consent token + cookie, one-time);
- * the authorization request comes from the server-side record, never from the form.
+ * OAuth Authorization Endpoint (POST): the user picked a provider in the dialog.
+ *
+ * Accepts only a form value that matches this browser's cookie and names a stored request, so a
+ * form submitted from another site can't skip the dialog. Then sends the user to the provider.
  */
 app.post("/authorize", async (c) => {
-	let approval: Awaited<ReturnType<typeof parseRedirectApproval>>;
-	try {
-		approval = await parseRedirectApproval(c.req.raw, c.env);
-	} catch (e) {
-		console.warn("[OAUTH_HANDLER] Rejected consent submission:", e instanceof Error ? e.message : e);
-		return c.text(
-			"This sign-in request has expired or was not started in this browser. Please start the connection again from your MCP client.",
-			403,
+	const formData = await c.req.formData();
+	const provider = formData.get("provider");
+	console.log(`[OAUTH_HANDLER] Selected provider: ${provider}`);
+	if (!isProvider(provider)) {
+		return c.text("Invalid request: unknown provider", 400);
+	}
+
+	const authReqInfo = await takePendingRecord<AuthRequest>(
+		c.env.PENDING_LOGINS,
+		c.req.raw,
+		AUTHORIZE_COOKIE,
+		AUTHORIZE_KEY_PREFIX,
+		formData.get("state"),
+	);
+	if (!authReqInfo) {
+		console.warn(
+			"[OAUTH_HANDLER] Rejected provider choice: no matching authorization request for this browser",
 		);
+		return c.text(EXPIRED_LOGIN, 400);
 	}
 	console.log(
-		`[OAUTH_HANDLER] Consent given for Client ID ${approval.authReqInfo.clientId} with provider ${approval.provider}`,
+		"[OAUTH_HANDLER] Processing OAuth approval request for Client ID:",
+		authReqInfo.clientId,
 	);
-	return redirectToProvider(c, approval.provider, approval.authReqInfo, approval.setCookies);
+
+	const headers = new Headers();
+	headers.append("Set-Cookie", clearPendingCookie(AUTHORIZE_COOKIE));
+	return redirectToProvider(c, provider, authReqInfo, headers);
 });
 
 /**
  * OAuth Callback Endpoint
  *
  * This route handles the callback from OAuth providers after user authentication.
- * It exchanges the temporary code for an access token, then stores some
- * user metadata & the auth token as part of the 'props' on the token passed
- * down to the client. It ends by redirecting the client back to _its_ callback URL
+ * The `state` must name a login this server started, in this browser (matching cookie), within
+ * the last 10 minutes; the record is deleted on use. Then completeLogin exchanges the code and
+ * finishes the authorization.
  */
 app.get("/callback", async (c) => {
 	console.log("[OAUTH_HANDLER] Received OAuth callback request");
-	// Accept only a state this browser started (state cookie), that exists and is unused
-	const state = c.req.query("state");
-	const flow = await consumeUpstreamState(c.env.CODE_VERIFIER_KV, c.req.raw, state);
-	if (!flow || !state) {
-		console.warn("[OAUTH_HANDLER] Rejected callback: unknown, expired, reused or foreign state");
-		return c.text(
-			"This sign-in session has expired or was not started in this browser. Please start the connection again from your MCP client.",
-			400,
+	const login = await takePendingRecord<PendingLogin>(
+		c.env.PENDING_LOGINS,
+		c.req.raw,
+		LOGIN_COOKIE,
+		LOGIN_KEY_PREFIX,
+		c.req.query("state"),
+	);
+	if (!login || !isProvider(login.provider)) {
+		console.warn(
+			"[OAUTH_HANDLER] Rejected callback: state unknown, expired, already used, or not from this browser",
 		);
+		return c.text(EXPIRED_LOGIN, 400);
 	}
-	const { provider, authReqInfo } = flow;
+
+	// The login record is used up: whatever happens next, clear its cookie
+	let response: Response;
+	try {
+		response = await completeLogin(c, login);
+	} catch (error) {
+		console.error("[OAUTH_HANDLER] Error completing login:", error);
+		response = c.text("Login failed", 500);
+	}
+	const withCleared = new Response(response.body, response);
+	withCleared.headers.append("Set-Cookie", clearPendingCookie(LOGIN_COOKIE));
+	return withCleared;
+});
+
+// Type the user data based on the provider
+interface GitHubUser {
+	id: number;
+	login: string;
+	name?: string;
+	email?: string | null;
+}
+
+interface GitHubEmail {
+	email: string;
+	primary: boolean;
+	verified: boolean;
+}
+
+interface TwitterUser {
+	id: string;
+	name: string;
+	username: string;
+}
+
+interface LinkedInUser {
+	sub: string;
+	name: string;
+	email?: string;
+	email_verified?: boolean;
+}
+
+interface GoogleUser {
+	id: string;
+	name: string;
+	email: string;
+	verified_email?: boolean;
+}
+
+/**
+ * Picks the GitHub address that may name an account: only addresses GitHub marks verified count.
+ * The public address if it is verified, else the verified primary, else any verified address
+ * (the same rule as doauth's gh-oidc-worker).
+ * @returns The address, or "" when the account has no verified address
+ */
+export function pickVerifiedGitHubEmail(emails: unknown, publicEmail?: string | null): string {
+	const verified = Array.isArray(emails)
+		? (emails as GitHubEmail[]).filter((e) => e?.verified === true && !!e.email)
+		: [];
+	const pick =
+		verified.find((e) => !!publicEmail && e.email === publicEmail) ??
+		verified.find((e) => e.primary) ??
+		verified[0];
+	return pick?.email || "";
+}
+
+/**
+ * Exchanges the provider's code for an access token, then stores some
+ * user metadata & the auth token as part of the 'props' on the token passed
+ * down to the client. It ends by redirecting the client back to _its_ callback URL
+ */
+async function completeLogin(c: HandlerContext, login: PendingLogin): Promise<Response> {
+	const { provider, authReqInfo } = login;
 	console.log(
-		`[OAUTH_HANDLER] OAuth callback received from ${provider} with provider:`,
-		provider,
+		`[OAUTH_HANDLER] OAuth callback received from ${provider} for Client ID:`,
+		authReqInfo.clientId,
 	);
 
 	// Exchange the code for an access token
@@ -181,21 +256,22 @@ app.get("/callback", async (c) => {
 			clientSecret = c.env.GITHUB_CLIENT_SECRET || "";
 			tokenUrl = "https://github.com/login/oauth/access_token";
 			userInfoUrl = "https://api.github.com/user";
-			// Use a fixed redirect URI for GitHub that matches what's registered in the GitHub OAuth application settings
-			redirectUri = "https://algorandmcplite.goplausible.xyz/callback";
+			// The same callback the authorization request used: this server's own /callback, which
+			// must be registered in the GitHub OAuth app of this server
+			redirectUri = new URL("/callback", c.req.url).href;
 			break;
 		case "twitter":
 			clientId = c.env.TWITTER_CLIENT_ID || "";
 			clientSecret = c.env.TWITTER_CLIENT_SECRET || "";
 			tokenUrl = "https://api.x.com/2/oauth2/token";
 			userInfoUrl = "https://api.x.com/2/users/me";
-			// redirectUri = new URL("/callback", c.req.url).href;
-
-			if (!flow.codeVerifier) {
-				console.error("[OAUTH_HANDLER] Missing PKCE verifier for Twitter flow");
+			// The verifier was stored with this login, so concurrent logins can't overwrite each other's
+			if (!login.codeVerifier) {
+				console.error("[OAUTH_HANDLER] Missing PKCE verifier in the X login record:", {
+					clientId: authReqInfo.clientId,
+				});
 				return c.text("Twitter session expired or PKCE missing", 400);
 			}
-			//redirectUri = pkce.upstreamRedirectUri;
 			redirectUri = new URL("/callback", c.req.url).href;
 			break;
 		case "linkedin":
@@ -221,14 +297,11 @@ app.get("/callback", async (c) => {
 		grantType: "authorization_code",
 		redirectUri,
 		upstreamUrl: tokenUrl,
-		codeVerifier: provider === "twitter" ? flow.codeVerifier : undefined,
+		codeVerifier: provider === "twitter" ? login.codeVerifier : undefined,
 	});
 
 	if (errorResponse) {
-		console.error(
-			`[OAUTH_HANDLER] Failed to fetch access token from ${provider}:`,
-			errorResponse,
-		);
+		console.error(`[OAUTH_HANDLER] Failed to fetch access token from ${provider}`);
 		return errorResponse;
 	}
 	console.log(`[OAUTH_HANDLER] Successfully fetched access token from ${provider}`);
@@ -243,10 +316,7 @@ app.get("/callback", async (c) => {
 		headers.Accept = "application/vnd.github.v3+json";
 		headers["User-Agent"] = "goplausible-remote-mcp";
 	} else if (provider === "twitter") {
-		headers.Authorization = `Bearer ${accessToken}`;
 		headers["Content-Type"] = "application/json";
-	} else if (provider === "linkedin") {
-		headers.Authorization = `Bearer ${accessToken}`;
 	}
 
 	const userResponse = await fetch(userInfoUrl, { headers });
@@ -257,44 +327,7 @@ app.get("/callback", async (c) => {
 		return c.text(`Failed to fetch user info: ${resText}`, 500);
 	}
 
-	// Type the user data based on the provider
-	interface GitHubUser {
-		id: number;
-		login: string;
-		name?: string;
-		email?: string | null;
-	}
-
-	interface TwitterUser {
-		id: string;
-		name: string;
-		username: string;
-	}
-	interface LinkedInUser {
-		sub: string;
-		name: string;
-		email?: string;
-		email_verified?: boolean;
-	}
-
-	interface GoogleUser {
-		id: string;
-		name: string;
-		email: string;
-		verified_email?: boolean;
-	}
 	const res = await userResponse.json();
-	// Parse the user data with the appropriate type
-	const userData =
-		provider === "github"
-			? (res as GitHubUser)
-			: provider === "twitter"
-				? res && typeof res === "object" && "data" in res
-					? (res.data as TwitterUser)
-					: ({} as TwitterUser)
-				: provider === "linkedin"
-					? (res as LinkedInUser)
-					: (res as GoogleUser);
 
 	// Normalize user data based on provider
 	let id: string;
@@ -302,7 +335,7 @@ app.get("/callback", async (c) => {
 	let email: string;
 
 	if (provider === "github") {
-		const githubUser = userData as GitHubUser;
+		const githubUser = res as GitHubUser;
 		id = githubUser.id != null ? String(githubUser.id) : "";
 		name = githubUser.name || githubUser.login;
 
@@ -320,21 +353,24 @@ app.get("/callback", async (c) => {
 			email = pickVerifiedGitHubEmail(await emailsResponse.json(), githubUser.email);
 		}
 	} else if (provider === "twitter") {
-		const twitterUser = userData as TwitterUser;
+		const twitterUser =
+			res && typeof res === "object" && "data" in res
+				? (res.data as TwitterUser)
+				: ({} as TwitterUser);
 		id = twitterUser.id || "";
 		name = twitterUser.username;
-		// The X API returns no email, so the X username names the account in the vault-based
-		// account system
+		// Twitter API does not return email by default, so the X username names the account
+		// in the vault-based account system
 		email = twitterUser.username || "";
 	} else if (provider === "linkedin") {
-		const linkedInUser = userData as LinkedInUser;
+		const linkedInUser = res as LinkedInUser;
 		id = linkedInUser.sub || "";
 		name = linkedInUser.name;
 		// A missing email used to become the literal string "undefined", shared by every such user
 		email = linkedInUser.email_verified === false ? "" : linkedInUser.email || "";
 	} else {
 		// Google format
-		const googleUser = userData as GoogleUser;
+		const googleUser = res as GoogleUser;
 		id = googleUser.id || "";
 		name = googleUser.name;
 		email = googleUser.verified_email === false ? "" : googleUser.email || "";
@@ -346,15 +382,9 @@ app.get("/callback", async (c) => {
 			hasId: !!id,
 			hasEmail: !!email,
 		});
-		return new Response(
+		return c.text(
 			`Your ${provider} account has no verified email${provider === "twitter" ? " or username" : ""} that this server can use to identify you.`,
-			{
-				status: 400,
-				headers: {
-					"Content-Type": "text/plain; charset=utf-8",
-					"Set-Cookie": clearFlowCookie(stateCookieName(state)),
-				},
-			},
+			400,
 		);
 	}
 
@@ -363,18 +393,6 @@ app.get("/callback", async (c) => {
 		clientId: authReqInfo.clientId,
 	});
 	const scope = authReqInfo.scope;
-	console.log(`[OAUTH_HANDLER] OAuth scope requested: ${scope}`);
-
-	// Check once more, right before issuing the code, that the redirect URI is still
-	// registered for this client (RFC 6749 §3.1.2.4)
-	const client = await c.env.OAUTH_PROVIDER.lookupClient(authReqInfo.clientId);
-	if (
-		!client ||
-		!client.redirectUris.includes(authReqInfo.redirectUri) ||
-		redirectUriProblem(authReqInfo.redirectUri)
-	) {
-		return c.text("Invalid redirect_uri", 400);
-	}
 
 	// Return back to the MCP client a new token
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
@@ -391,93 +409,71 @@ app.get("/callback", async (c) => {
 			clientId: authReqInfo.clientId, // Client ID for OAuth
 		} as Props,
 		request: authReqInfo,
-		scope: scope,
+		scope,
 		userId: id,
 	});
 
-	return new Response(null, {
-		status: 302,
-		headers: { Location: redirectTo, "Set-Cookie": clearFlowCookie(stateCookieName(state)) },
-	});
-});
+	return Response.redirect(redirectTo, 302);
+}
 
 /**
- * Logout: revokes the caller's own session.
- * Requires the access token this server issued, as `Authorization: Bearer <token>` (RFC 6750).
- * Revokes the upstream provider token kept in that session, then the grant and every token
- * issued under it. Nothing is read from query parameters and nothing outside the caller's own
- * grant is touched (client registrations are never deleted here).
+ * Logout endpoint: revokes the caller's own session.
+ *
+ * Requires `Authorization: Bearer <access token>`. Who is logging out (user, client, provider)
+ * comes from that validated token, never from query parameters. Then revokeOwnSession revokes
+ * the upstream provider token and this user's grants for that client; client registrations are
+ * never deleted.
  */
-app.post("/logout", async (c) => {
-	// The auth scheme is case-insensitive (RFC 9110 §11.1)
-	const match = /^Bearer +(\S+)\s*$/i.exec(c.req.header("Authorization") || "");
-	if (!match) {
-		// RFC 6750 §3: no credentials presented, so no error code in the challenge
-		return new Response(null, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="OAuth"' } });
+app.all("/logout", async (c) => {
+	const invalidToken = (description: string) =>
+		c.json({ error: "invalid_token", error_description: description }, 401, {
+			"WWW-Authenticate": `Bearer realm="OAuth", error="invalid_token", error_description="${description}"`,
+		});
+
+	const authHeader = c.req.header("authorization") || "";
+	const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+	if (!token) {
+		return invalidToken("Missing bearer access token");
 	}
-	const session = await c.env.OAUTH_PROVIDER.unwrapToken(match[1]);
+
+	const session = await c.env.OAUTH_PROVIDER.unwrapToken(token);
 	if (!session) {
-		return c.json(
-			{ error: "invalid_token", error_description: "The access token is invalid or expired" },
-			401,
-			{ "WWW-Authenticate": 'Bearer realm="OAuth", error="invalid_token"' },
-		);
+		console.log("[OAUTH_HANDLER] Logout rejected: invalid or expired access token");
+		return invalidToken("Invalid or expired access token");
 	}
 
-	// Revoke the upstream provider token kept in this session (best effort)
-	const provider = session.props?.provider;
-	const upstreamToken = session.props?.accessToken;
-	let upstreamRevoked = false;
-	if (isOAuthProvider(provider) && typeof upstreamToken === "string" && upstreamToken) {
-		try {
-			upstreamRevoked = await revokeUpstreamToken(provider, upstreamToken, c.env);
-		} catch (error) {
-			console.error(
-				"[OAUTH_HANDLER] Upstream token revocation error:",
-				error instanceof Error ? error.message : error,
-			);
-		}
+	const { userId, clientId } = session;
+	const provider: string | undefined = session.props?.provider;
+	console.log("[OAUTH_HANDLER] Logout request:", { userId, clientId, provider });
+
+	let revoked: number;
+	try {
+		revoked = await revokeOwnSession(c.env.OAUTH_PROVIDER, c.env, {
+			userId,
+			clientId,
+			provider,
+			upstreamToken: session.props?.accessToken,
+		});
+	} catch (error) {
+		console.error("[OAUTH_HANDLER] Error revoking grants during logout:", error);
+		return c.text("Logout failed", 500);
+	}
+	console.log("[OAUTH_HANDLER] Revoked grants:", { userId, clientId, revoked });
+
+	const headers = new Headers({ "Content-Type": "application/json" });
+	// Each cookie needs its own Set-Cookie header
+	for (const name of LEGACY_COOKIES) {
+		headers.append("Set-Cookie", `${name}=; Secure; Path=/; SameSite=Lax; Max-Age=0`);
 	}
 
-	// Revoke this session's grant and every token issued under it
-	await c.env.OAUTH_PROVIDER.revokeGrant(session.grantId, session.userId);
-	console.log(`[OAUTH_HANDLER] Logged out grant ${session.grantId} (upstream revoked: ${upstreamRevoked})`);
-
-	const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
-	// Clear the legacy remembered-approval cookies a browser may still hold
-	headers.append("Set-Cookie", "mcp-approved-clients=; HttpOnly; Secure; Path=/; SameSite=Lax; Max-Age=0");
-	headers.append("Set-Cookie", "mcp-provider-preference=; Secure; Path=/; SameSite=Lax; Max-Age=0");
-	return new Response(JSON.stringify({ success: true, upstreamRevoked }), { status: 200, headers });
+	return new Response(
+		JSON.stringify({
+			success: true,
+			message: "Successfully logged out",
+			forceReauthentication: true,
+		}),
+		{ status: 200, headers },
+	);
 });
-
-/**
- * Image proxy for MCP widget CSP compliance.
- * Serves only image URLs this server signed (IMAGE_PROXY_KEY), only image content,
- * with headers that keep it from running as a page. See src/utils/imageProxy.ts.
- */
-app.get(IMAGE_PROXY_PATH, (c) => handleImageProxyRequest(c.req.url, c.env.IMAGE_PROXY_KEY));
-
-interface GitHubEmail {
-	email: string;
-	primary: boolean;
-	verified: boolean;
-}
-
-/**
- * Picks the GitHub address that may name an account: only addresses GitHub marks verified count.
- * The public address if it is verified, else the verified primary, else any verified address
- * (the same rule as doauth's client-worker and gh-oidc-worker, and algorand-remote-mcp).
- * @returns The address, or "" when the account has no verified address
- */
-export function pickVerifiedGitHubEmail(emails: unknown, publicEmail?: string | null): string {
-	const verified = Array.isArray(emails)
-		? (emails as GitHubEmail[]).filter((e) => e?.verified === true && !!e.email)
-		: [];
-	const pick =
-		verified.find((e) => !!publicEmail && e.email === publicEmail) ??
-		verified.find((e) => e.primary) ??
-		verified[0];
-	return pick?.email || "";
-}
 
 export { app as OauthHandler };

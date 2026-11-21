@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import type { PendingLogins } from './pending-logins';
 export interface EncodedAssetParams {
   /**
    * assetTotal
@@ -418,6 +419,17 @@ export interface Env {
   MCP_OBJECT: DurableObjectNamespace<any>;
 
   /**
+   * Pending login steps (picker request, login on its way to the provider): one PendingLogins
+   * object per random value, so each is strictly single-use
+   */
+  PENDING_LOGINS: DurableObjectNamespace<PendingLogins>;
+
+  /**
+   * /register: at most 10 client registrations per minute from one address (counted per location)
+   */
+  REGISTER_RATE_LIMITER?: RateLimit;
+
+  /**
    * Static assets binding for MCP Apps UI widgets
    */
   ASSETS?: { fetch: (request: Request | string) => Promise<Response> };
@@ -527,7 +539,7 @@ export interface Env {
 
   VERIFIED_ASSETS?: KVNamespace;
   ARC90_KV?: KVNamespace;
-  OAUTH_KV?: KVNamespace;
+  OAUTH_KV: KVNamespace;
   HCV_WORKER_URL?: string; // Hashicorp Vault Worker binding for secure secret storage
 
   VAULT_OIDC_ACCESSOR: string; // Hashicorp vault OIDC accessors
