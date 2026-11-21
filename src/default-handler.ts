@@ -5,8 +5,8 @@ import { IMAGE_PROXY_PATH, handleImageProxyRequest } from "./utils/imageProxy";
 
 /**
  * Everything outside /sse: this server's own route (the image proxy its MCP Apps widgets use), then
- * the shared dOAuth login layer (oauth-handler.ts, a synced copy of algorand-remote-mcp's, which
- * must not be edited here).
+ * the shared dOAuth login layer (oauth-handler.ts, a synced copy of the master in
+ * doauth/client-worker/src, which must not be edited here).
  */
 const app = new Hono<{ Bindings: Env & { IMAGE_PROXY_KEY?: string } }>();
 
