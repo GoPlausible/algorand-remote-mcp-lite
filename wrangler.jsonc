@@ -5,6 +5,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "algorand-remote-mcp-lite",
+  "logpush": true,
   "main": "src/index.ts",
   "workers_dev": true,
   "preview_urls": false,
@@ -91,7 +92,7 @@
     }
   ],
   "observability": {
-    "enabled": false
+    "enabled": true
   },
   /**
    * Environment Variables
