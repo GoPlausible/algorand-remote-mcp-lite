@@ -324,7 +324,7 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
         const shopperAddress = algosdk.encodeAddress(Buffer.from(publicKeyResult.publicKey, 'base64'));
         // Parse and validate the mandate data based on type
         const mandateData = mandate;
-        console.log('Parsed mandate data:', mandateData);
+        console.log('Parsed mandate data:', { type });
         if (mandateData.merchant_public_key && mandateData.merchant_public_key.length === 58) {
           mandateData.merchant_public_key = Buffer.from(algosdk.decodeAddress(mandateData.merchant_public_key).publicKey).toString('base64');
           console.log('Converted merchant public key to base64:', mandateData.merchant_public_key);
@@ -438,7 +438,7 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
 
 
         // Generate the verifiable credential
-        console.log('Generating verifiable credential with mandate object:', mandateObj);
+        console.log('Generating verifiable credential for mandate type:', type);
         console.log('Using public key:', publicKeyResult.publicKey);
         const verifiableCredential = await generateVerifiableCredential(
           env,
@@ -460,7 +460,7 @@ export async function registerAp2Tools(server: McpServer, env: Env, props: Props
         });
         await env.A2A_AP2_STORE.put(key, value, { expirationTtl: 24 * 60 * 60 });
         console.log('Stored VC in KV with key:', key);
-        console.log('Generated verifiable credential:', verifiableCredential);
+        console.log('Generated verifiable credential:', { type, key });
         const createdAt = new Date().toISOString();
         return {
           content: [{

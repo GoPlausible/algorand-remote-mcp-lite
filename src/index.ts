@@ -61,10 +61,10 @@ export class AlgorandRemoteMCPLite extends McpAgent<Env & Cloudflare.Env, State,
 		// Configure ResponseProcessor with pagination settings
 		console.log("Initializing Algorand Remote MCP...");
 		console.log("Current state:", this.state);
-		console.log("Props name:", this.props?.name);
+		console.log("Props:", { provider: this.props?.provider, hasName: !!this.props?.name });
 		// Set provider in state if available in props
 	
-		console.log("Props User ID:", this.props?.id);
+		console.log("Props User ID:", this.props?.id ? `${String(this.props.id).slice(0, 6)}…` : undefined);
 		console.log("Props clientId:", this.props?.clientId);
 		// Set default page size or use from state if available
 		const itemsPerPage = this.state?.items_per_page || 10;

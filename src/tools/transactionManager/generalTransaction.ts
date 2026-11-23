@@ -210,15 +210,12 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         if (!publicKeyResult.success || !publicKeyResult.publicKey) {
           throw new Error('Failed to get public key from vault');
         }
-        console.log('Public key from vault:', publicKeyResult.publicKey);
-        console.log(`Signing transaction for ${props.email} with provider ${props.provider}`);
+        console.log(`Signing transaction with provider ${props.provider}`);
         // Get the raw signature from the vault
         const TAG: Buffer = Buffer.from("TX");
         console.log('TAG:', Buffer.from("TX"));
-        console.log('Encoded transaction buffer signing:', new Uint8Array(Buffer.from(encodedTxn, 'base64')));
         const finalEncodedTxn = new Uint8Array(Buffer.from(encodedTxn, 'base64'));
         const finalEncodedTxnTagged = ConcatArrays(TAG, finalEncodedTxn);
-        console.log('Final encoded transaction:', finalEncodedTxnTagged);
         const finalEncodedTxnBase64 = Buffer.from(finalEncodedTxnTagged).toString('base64');
         const signatureResult = await signWithTransit(env, finalEncodedTxnBase64, props.email, props.provider);
 
@@ -230,15 +227,12 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
 
         // Decode the transaction
         const txn = algosdk.decodeUnsignedTransaction(Buffer.from(encodedTxn, 'base64'));
-        console.log('Decoded transaction:', txn);
 
         // Convert the base64 signature to Uint8Array
         const signature = Buffer.from(signatureResult.signature, 'base64');
-        console.log('Signature:', signature);
         // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
         const stxn = new algosdk.SignedTransaction({ txn, sig: new Uint8Array(signature) });
         const encodedSignedTxn = algosdk.encodeMsgpack(stxn);
-        console.log('Encoded signed transaction:', encodedSignedTxn);
         console.log('TXN ID:', txn.txID());
         // Return the base64 encoded signed transaction with structuredContent for widget and agent
         const txID = txn.txID();
@@ -398,10 +392,8 @@ export async function registerGeneralTransactionTools(server: McpServer, env: En
         if (!algodClient) {
           throw new Error('Failed to create Algorand client');
         }
-        console.log('Signed TXN:', signedTxn);
         // Decode and submit transaction
         const decodedTxnBytes = new Uint8Array(Buffer.from(signedTxn, 'base64'));
-        console.log('Decoded signed transaction:', decodedTxnBytes);
         const response = await algodClient.sendRawTransaction(decodedTxnBytes).do();
         const txId = response.txid;
         console.log('Transaction ID:', txId);

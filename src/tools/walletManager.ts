@@ -121,22 +121,22 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         let providerEmail = `${props.provider}--${props.email}`
         let entityId: string | null = await env.VAULT_ENTITIES.get(providerEmail);
         let providerEntity : string | null =  `${props.provider}--${entityId}`;
-        console.log(`Entity ID for ${providerEmail} from KV store:`, providerEntity);
+        console.log('Wallet reset: current entity', { provider: props.provider, entityId });
         let roleId = null;
         if (!!entityId) {
           console.log(`Fetching role ID from KV for entity ${entityId}`);
           providerEntity = `${props.provider}--${entityId}`
           roleId = await env.VAULT_ENTITIES.get(providerEntity);
-          console.log(`Role ID for ${entityId} from KV store:`, roleId);
+          console.log('Role ID from KV store:', { provider: props.provider, entityId, hasRoleId: !!roleId });
         }
         if (!roleId || !entityId) {
-          console.log(`provider: ${props.provider}, email: ${props.email}, clientId: ${props.clientId}, userId: ${props.id}`);
+          console.log('Wallet reset: no role or entity ID in KV', { provider: props.provider, entityId, hasRoleId: !!roleId });
           throw new Error('Role or entity ID not found in KV store');
         }
 
         if (publicKeyResult.success && !publicKeyResult.error) {
           // For vault-based accounts, create a new keypair in the vault
-          console.log('Creating new vault-based keypair for user:', props.email);
+          console.log('Creating new vault-based keypair for user:', { provider: props.provider, entityId });
 
           // Delete existing keypair if it exists
           // Note: This would require a delete endpoint in the vault worker
@@ -145,12 +145,12 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           await deleteKeypair(env, props.email, props.provider);
 
           await deleteEntity(env, props.email, entityId, roleId, props.provider);
-          console.log(`Deleted entity and role for ${props.email} with ID ${entityId}`);
+          console.log('Deleted entity and role:', { provider: props.provider, entityId });
 
           providerEmail = `${props.provider}--${props.email}`
           providerEntity = `${props.provider}--${entityId}`
           await env.VAULT_ENTITIES.delete(providerEmail);
-          console.log(`Deleted entity ID for ${providerEmail} from KV store`);
+          console.log("Deleted the account's entity ID from KV store:", { provider: props.provider, entityId });
           await env.VAULT_ENTITIES.delete(providerEntity);
           // The Vault worker deletes this binding itself from its fix #7 on; deleting it here too is harmless
           await env.VAULT_ENTITIES.delete(subjectBindingKey(props.provider, entityId));
@@ -169,14 +169,14 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           }
           console.log(`New keypair created: ${keypairResult}`);
           // Get the address from the public key
-          console.log(`Getting public key for ${props.email} with provider ${props.provider}`);
+          console.log('Getting public key:', { provider: props.provider });
 
           const newPublicKeyResult = await getPublicKey(env, props.email, props.provider);
 
           if (!newPublicKeyResult.success || !newPublicKeyResult.publicKey) {
             throw new Error(newPublicKeyResult.error || 'Failed to get public key from vault');
           }
-          console.log(`Public key for ${props.email}: ${newPublicKeyResult.publicKey}`);
+          console.log('Public key retrieved:', { provider: props.provider });
 
           // Convert the public key to an Algorand address
           const publicKeyBuffer = Buffer.from(newPublicKeyResult.publicKey, 'base64');
@@ -184,13 +184,13 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
           providerEmail = `${props.provider}--${props.email}`
           entityId = await env.VAULT_ENTITIES?.get(providerEmail);
           providerEntity = `${props.provider}--${entityId}`
-          console.log(`Entity ID for ${providerEmail} from KV store:`, entityId);
+          console.log('Wallet reset: new entity', { provider: props.provider, entityId });
           if (!entityId) {
             throw new Error(`No entity ID found for ${providerEmail}`);
           }
           console.log(`Fetching role ID from KV for entity ${providerEntity}`);
           roleId = await env.VAULT_ENTITIES?.get(providerEntity);
-          console.log(`Role ID for ${providerEntity} from KV store:`, roleId);
+          console.log('Role ID from KV store:', { provider: props.provider, entityId, hasRoleId: !!roleId });
           if (!roleId) {
             throw new Error(`No Role ID found for entity: ${providerEntity}`);
           }
@@ -227,12 +227,12 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
         let providerEmail = `${props.provider}--${props.email}`
         const entityId = await env.VAULT_ENTITIES?.get(providerEmail);
         const providerEntity = `${props.provider}--${entityId}`
-        console.log(`Entity ID for ${providerEmail} from KV store:`, providerEntity);
+        console.log('Entity ID from KV store:', { provider: props.provider, entityId });
         let roleId = null;
         if (entityId) {
           console.log(`Fetching role ID from KV for entity ${providerEntity}`);
           roleId = await env.VAULT_ENTITIES?.get(providerEntity);
-          console.log(`Role ID for ${providerEntity} from KV store:`, roleId);
+          console.log('Role ID from KV store:', { provider: props.provider, entityId, hasRoleId: !!roleId });
         }
         if (!entityId) {
           return {
@@ -284,7 +284,7 @@ export async function registerWalletTools(server: McpServer, env: Env, props: Pr
       let providerEmail = `${props.provider}--${props.email}`
       const entityId = await env.VAULT_ENTITIES?.get(providerEmail);
       let providerEntity = `${props.provider}--${entityId}`
-      console.log(`Entity ID for ${providerEmail} from KV store:`, providerEntity);
+      console.log('Entity ID from KV store:', { provider: props.provider, entityId });
 
       try {
         // Get address using the unified approach

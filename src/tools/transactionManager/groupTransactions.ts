@@ -243,7 +243,7 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
             Buffer.from(txn, 'base64')
           );
         });
-        console.log(decodedTxns);
+        console.log('Decoded transactions:', decodedTxns.length);
 
         // Assign group ID
         const txnGroup = algosdk.assignGroupID(decodedTxns);
@@ -252,7 +252,7 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         const groupedTxns = txnGroup.map(txn =>
           Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64')
         );
-        console.log(groupedTxns);
+        console.log('Grouped transactions:', txnGroup.map(txn => txn.txID()));
 
         // Return the transactions with group IDs
         const groupId = Buffer.from(decodedTxns[0].group!).toString('base64');
@@ -376,7 +376,7 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
         if (!props.email || !props.provider) {
           throw new Error('Email and provider must be provided in props');
         }
-        console.log(`Signing atomic transaction group for ${props.email} with provider ${props.provider}`);
+        console.log(`Signing atomic transaction group with provider ${props.provider}`);
         // // Ensure user has an account
         // try {
         //   await ensureUserAccount(env, props.email || '', props.provider || 'google');
@@ -417,15 +417,12 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
             if (!publicKeyResult.success || !publicKeyResult.publicKey) {
               return null;
             }
-            console.log('Public key from vault:', publicKeyResult.publicKey);
 
             // Get the raw signature from the vault
             const TAG: Buffer = Buffer.from("TX");
             console.log('TAG:', Buffer.from("TX"));
-            console.log('Encoded transaction buffer signing:', new Uint8Array(Buffer.from(txn, 'base64')));
             const finalEncodedTxn = new Uint8Array(Buffer.from(txn, 'base64'));
             const finalEncodedTxnTagged = ConcatArrays(TAG, finalEncodedTxn);
-            console.log('Final encoded transaction:', finalEncodedTxnTagged);
             const finalEncodedTxnBase64 = Buffer.from(finalEncodedTxnTagged).toString('base64');
             const signatureResult = await signWithTransit(env, finalEncodedTxnBase64, props.email || keyName, props.provider);
 
@@ -435,15 +432,12 @@ export function registerGroupTransactionTools(server: McpServer, env: Env, props
 
             // Decode the transaction
             const decodedTxn = algosdk.decodeUnsignedTransaction(Buffer.from(txn, 'base64'));
-            console.log('Decoded transaction:', decodedTxn);
 
             // Convert the base64 signature to Uint8Array
             const signature = Buffer.from(signatureResult.signature, 'base64');
-            console.log('Signature:', signature);
             // Use SignedTransaction + encodeMsgpack (canonical algosdk v3 API)
             const stxn = new algosdk.SignedTransaction({ txn: decodedTxn, sig: new Uint8Array(signature) });
             const encodedSignedTxn = algosdk.encodeMsgpack(stxn);
-            console.log('Encoded signed transaction:', encodedSignedTxn);
             console.log('TXN ID:', decodedTxn.txID());
 
             // Return the base64 encoded signed transaction

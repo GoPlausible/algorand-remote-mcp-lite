@@ -288,13 +288,12 @@ export function registerAssetTransactionTools(server: McpServer, env: Env, props
           assetIndex: 31566704, // USDC Asset ID on Algorand Mainnet
           suggestedParams: params,
         });
-        console.log('Public key from vault:', publicKeyResult.publicKey);
-        console.log(`Signing transaction for ${props.email} with provider ${props.provider}`);
+        console.log(`Signing transaction with provider ${props.provider}`);
         const TAG: Buffer = Buffer.from("TX");
         console.log('TAG:', Buffer.from("TX"));
         const finalEncodedTxn = algosdk.encodeUnsignedTransaction(txn);
         const finalEncodedTxnTagged = ConcatArrays(TAG, finalEncodedTxn);
-        console.log('Final encoded transaction:', finalEncodedTxnTagged);
+        console.log('Signing transaction ID:', txn.txID());
         const finalEncodedTxnBase64 = Buffer.from(finalEncodedTxnTagged).toString('base64');
         const signatureResult = await signWithTransit(env, finalEncodedTxnBase64, props.email, props.provider);
         if (!signatureResult.success || !signatureResult.signature) {
